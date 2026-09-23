@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestionale Aziendale</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --primary:#1e5cb3; --primary-dark:#154585; --bg:#f4f6f9; --card:#ffffff;
+    --border:#e1e5ea; --text:#1c2530; --muted:#66707d; --danger:#c0392b; --ok:#1f8b4c;
+    --warn:#b8860b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  #app{min-height:100vh;display:flex;flex-direction:column;}
+  header{background:var(--primary);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  header h1{font-size:18px;margin:0;font-weight:600;}
+  header .user-box{font-size:13px;display:flex;align-items:center;gap:12px;}
+  button{cursor:pointer;border:none;border-radius:6px;padding:8px 14px;font-size:14px;background:var(--primary);color:#fff;}
+  button:hover{background:var(--primary-dark);}
+  button.secondary{background:#eef1f5;color:var(--text);}
+  button.secondary:hover{background:#dfe4ea;}
+  button.danger{background:var(--danger);}
+  nav{background:#fff;border-bottom:1px solid var(--border);display:flex;gap:4px;padding:0 16px;overflow-x:auto;}
+  nav button{background:transparent;color:var(--muted);border-radius:0;padding:12px 16px;font-weight:500;white-space:nowrap;}
+  nav button.active{color:var(--primary);border-bottom:2px solid var(--primary);}
+  nav button:hover{background:#f0f3f7;color:var(--primary);}
+  main{flex:1;padding:20px;max-width:1200px;width:100%;margin:0 auto;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:18px;}
+  .card h2{margin-top:0;font-size:16px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+  tr:hover td{background:#f8fafc;}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:#fff;color:var(--text);}
+  textarea{min-height:60px;font-family:inherit;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;}
+  .badge.disponibile{background:#e3f6ea;color:var(--ok);}
+  .badge.in_uso{background:#e5edfa;color:var(--primary);}
+  .badge.in_revisione,.badge.da_riparare{background:#fdf3d8;color:var(--warn);}
+  .badge.danneggiato,.badge.fuori_servizio{background:#fbe3e1;color:var(--danger);}
+  .badge.aperto{background:#e5edfa;color:var(--primary);}
+  .badge.in_corso{background:#fdf3d8;color:var(--warn);}
+  .badge.chiuso{background:#e3f6ea;color:var(--ok);}
+  .badge.annullato{background:#fbe3e1;color:var(--danger);}
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:32px;width:100%;max-width:380px;}
+  .login-box h1{font-size:20px;text-align:center;margin-bottom:4px;}
+  .login-box p.sub{text-align:center;color:var(--muted);font-size:13px;margin-top:0;margin-bottom:20px;}
+  .login-box label{margin-top:12px;}
+  .login-box button{width:100%;margin-top:18px;padding:10px;}
+  .switch-link{text-align:center;margin-top:14px;font-size:13px;color:var(--muted);}
+  .switch-link a{color:var(--primary);cursor:pointer;text-decoration:none;}
+  .msg{padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:12px;}
+  .msg.error{background:#fbe3e1;color:var(--danger);}
+  .msg.ok{background:#e3f6ea;color:var(--ok);}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .empty{color:var(--muted);font-size:13px;padding:20px;text-align:center;}
+  .pill-select{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .pill-select button{background:#eef1f5;color:var(--text);padding:6px 12px;font-size:12px;}
+  .pill-select button.active{background:var(--primary);color:#fff;}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;}
+  .kpi{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;}
+  .kpi .num{font-size:26px;font-weight:700;color:var(--primary);}
+  .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+  select[multiple]{height:auto;}
+  .close-x{background:transparent;color:var(--muted);padding:4px 8px;}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .modal{background:#fff;border-radius:10px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow:auto;}
+  .modal h3{margin-top:0;}
+  small.hint{color:var(--muted);}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ============================================================
+// CONFIGURAZIONE SUPABASE
+// ============================================================
+const SUPABASE_URL = "https://pvlzvubxwbwtsqgmxdvt.supabase.co";
+const SUPABASE_KEY = "sb_publishable_BE-eqQHoW5Vaxy3HURnt6w_wU2sN6dW";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================================
+// STATO GLOBALE
+// ============================================================
+let state = {
+  session: null,
+  view: "dashboard",
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [] },
+  authMode: "login", // login | signup
+  soAperto: null, // id service order aperto nel dettaglio
+};
+
+const app = document.getElementById("app");
+
+function statoLabel(s){
+  const map = {
+    disponibile:"Disponibile", in_uso:"In uso", in_revisione:"In revisione",
+    da_riparare:"Da riparare", danneggiato:"Danneggiato", fuori_servizio:"Fuori servizio",
+    attivo:"Attivo", sospeso:"Sospeso", concluso:"Concluso",
+    aperto:"Aperto", in_corso:"In corso", chiuso:"Chiuso", annullato:"Annullato"
+  };
+  return map[s] || s;
+}
+function badge(s){ return `<span class="badge ${s}">${statoLabel(s)}</span>`; }
+function fmtDate(d){ if(!d) return "-"; const dt=new Date(d); return dt.toLocaleDateString("it-IT")+" "+dt.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"}); }
+function escapeHtml(str){ if(str==null) return ""; return String(str).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+// ============================================================
+// AUTH
+// ============================================================
+async function initAuth(){
+  const { data:{ session } } = await sb.auth.getSession();
+  state.session = session;
+  sb.auth.onAuthStateChange((_event, session)=>{
+    state.session = session;
+    render();
+  });
+  render();
+}
+
+async function handleLogin(email, password){
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  return error;
+}
+async function handleSignup(email, password, fullName){
+  const { error } = await sb.auth.signUp({ email, password, options:{ data:{ full_name: fullName } } });
+  return error;
+}
+async function handleLogout(){
+  await sb.auth.signOut();
+  state.view = "dashboard";
+  render();
+}
+
+// ============================================================
+// CARICAMENTO DATI
+// ============================================================
+async function loadAll(){
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe] = await Promise.all([
+    sb.from("clienti").select("*").order("created_at",{ascending:false}),
+    sb.from("cantieri").select("*").order("created_at",{ascending:false}),
+    sb.from("articoli").select("*").order("created_at",{ascending:false}),
+    sb.from("pezzi").select("*").order("created_at",{ascending:false}),
+    sb.from("service_orders").select("*").order("data_apertura",{ascending:false}),
+    sb.from("service_order_righe").select("*").order("data",{ascending:false}),
+  ]);
+  state.data.clienti = clienti.data || [];
+  state.data.cantieri = cantieri.data || [];
+  state.data.articoli = articoli.data || [];
+  state.data.pezzi = pezzi.data || [];
+  state.data.serviceOrders = serviceOrders.data || [];
+  state.data.righe = righe.data || [];
+}
+
+function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
+function cantiereNome(id){ const c = state.data.cantieri.find(x=>x.id===id); return c ? c.nome : "-"; }
+function articoloLabel(id){ const a = state.data.articoli.find(x=>x.id===id); return a ? `${a.codice} - ${a.descrizione}` : "-"; }
+function pezzoLabel(id){ const p = state.data.pezzi.find(x=>x.id===id); return p ? `${p.dtr} (${articoloLabel(p.articolo_id)})` : "-"; }
+
+// ============================================================
+// RENDER PRINCIPALE
+// ============================================================
+async function render(){
+  if(!state.session){
+    renderLogin();
+    return;
+  }
+  app.innerHTML = `
+    <header>
+      <h1>Gestionale Aziendale</h1>
+      <div class="user-box">
+        <span>${escapeHtml(state.session.user.email)}</span>
+        <button class="secondary" id="btn-logout">Esci</button>
+      </div>
+    </header>
+    <nav id="main-nav">
+      ${navBtn("dashboard","Dashboard")}
+      ${navBtn("clienti","Clienti")}
+      ${navBtn("cantieri","Cantieri")}
+      ${navBtn("magazzino","Magazzino")}
+      ${navBtn("pezzi","Pezzi (DTR)")}
+      ${navBtn("serviceorder","Service Order")}
+    </nav>
+    <main id="main-content"><div class="empty">Caricamento...</div></main>
+  `;
+  document.getElementById("btn-logout").onclick = handleLogout;
+  document.querySelectorAll("#main-nav button").forEach(b=>{
+    b.onclick = ()=>{ state.view = b.dataset.view; state.soAperto=null; render(); };
+  });
+
+  await loadAll();
+  const main = document.getElementById("main-content");
+  if(state.view==="dashboard") main.innerHTML = viewDashboard();
+  if(state.view==="clienti") { main.innerHTML = viewClienti(); wireClienti(); }
+  if(state.view==="cantieri") { main.innerHTML = viewCantieri(); wireCantieri(); }
+  if(state.view==="magazzino") { main.innerHTML = viewMagazzino(); wireMagazzino(); }
+  if(state.view==="pezzi") { main.innerHTML = viewPezzi(); wirePezzi(); }
+  if(state.view==="serviceorder") { main.innerHTML = viewServiceOrder(); wireServiceOrder(); }
+}
+
+function navBtn(view, label){
+  return `<button data-view="${view}" class="${state.view===view?'active':''}">${label}</button>`;
+}
+
+// ============================================================
+// LOGIN / SIGNUP
+// ============================================================
+function renderLogin(){
+  const isSignup = state.authMode === "signup";
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-box">
+        <h1>Gestionale Aziendale</h1>
+        <p class="sub">${isSignup? "Crea il tuo account" : "Accedi al tuo account"}</p>
+        <div id="login-msg"></div>
+        <form id="login-form">
+          ${isSignup? `<label>Nome completo</label><input type="text" id="f-name" required>` : ""}
+          <label>Email</label>
+          <input type="email" id="f-email" required>
+          <label>Password</label>
+          <input type="password" id="f-password" required minlength="6">
+          <button type="submit">${isSignup? "Registrati" : "Accedi"}</button>
+        </form>
+        <div class="switch-link">
+          ${isSignup
+            ? `Hai già un account? <a id="switch-mode">Accedi</a>`
+            : `Non hai un account? <a id="switch-mode">Registrati</a>`}
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById("switch-mode").onclick = ()=>{
+    state.authMode = isSignup? "login" : "signup";
+    renderLogin();
+  };
+  document.getElementById("login-form").onsubmit = async (e)=>{
+    e.preventDefault();
+    const email = document.getElementById("f-email").value.trim();
+    const password = document.getElementById("f-password").value;
+    const msgBox = document.getElementById("login-msg");
+    msgBox.innerHTML = "";
+    let error;
+    if(isSignup){
+      const fullName = document.getElementById("f-name").value.trim();
+      error = await handleSignup(email, password, fullName);
+      if(!error){
+        msgBox.innerHTML = `<div class="msg ok">Registrazione avvenuta. Controlla la tua email se richiesta conferma, poi accedi.</div>`;
+        state.authMode = "login";
+        setTimeout(renderLogin, 1800);
+        return;
+      }
+    } else {
+      error = await handleLogin(email, password);
+    }
+    if(error){
+      msgBox.innerHTML = `<div class="msg error">${escapeHtml(error.message)}</div>`;
+    }
+  };
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function viewDashboard(){
+  const d = state.data;
+  const soAperti = d.serviceOrders.filter(s=>s.stato==="aperto"||s.stato==="in_corso").length;
+  const fuoriMagazzino = d.pezzi.filter(p=>p.stato==="in_uso").length;
+  const daRevisionare = d.pezzi.filter(p=>p.stato==="in_revisione"||p.stato==="da_riparare").length;
+  const cantieriAttivi = d.cantieri.filter(c=>c.stato==="attivo").length;
+  return `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="num">${d.clienti.length}</div><div class="lbl">Clienti</div></div>
+      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
+      <div class="kpi"><div class="num">${d.articoli.length}</div><div class="lbl">Articoli a catalogo</div></div>
+      <div class="kpi"><div class="num">${d.pezzi.length}</div><div class="lbl">Pezzi totali (DTR)</div></div>
+      <div class="kpi"><div class="num">${fuoriMagazzino}</div><div class="lbl">Pezzi fuori magazzino</div></div>
+      <div class="kpi"><div class="num">${daRevisionare}</div><div class="lbl">Da revisionare/riparare</div></div>
+      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
+    </div>
+    <div class="card" style="margin-top:18px;">
+      <h2>Ultimi Service Order</h2>
+      ${d.serviceOrders.length===0? `<div class="empty">Nessun Service Order creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Apertura</th></tr></thead>
+      <tbody>
+        ${d.serviceOrders.slice(0,8).map(s=>`
+          <tr><td>#${s.numero}</td><td>${escapeHtml(clienteNome(s.cliente_id))}</td><td>${escapeHtml(cantiereNome(s.cantiere_id))}</td><td>${badge(s.stato)}</td><td>${fmtDate(s.data_apertura)}</td></tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+
+// ============================================================
+// CLIENTI
+// ============================================================
+function viewClienti(){
+  const rows = state.data.clienti;
+  return `
+    <div class="card">
+      <h2>Nuovo cliente</h2>
+      <form id="form-cliente">
+        <div class="form-grid">
+          <div><label>Ragione sociale *</label><input required id="c-ragione"></div>
+          <div><label>Referente</label><input id="c-referente"></div>
+          <div><label>Telefono</label><input id="c-telefono"></div>
+          <div><label>Email</label><input type="email" id="c-email"></div>
+          <div><label>Indirizzo</label><input id="c-indirizzo"></div>
+          <div><label>Partita IVA</label><input id="c-piva"></div>
+          <div><label>Settore</label><input id="c-settore"></div>
+        </div>
+        <label>Note</label><textarea id="c-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva cliente</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Elenco clienti (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun cliente inserito.</div>` : `
+      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th><th>Cantieri</th></tr></thead>
+      <tbody>
+        ${rows.map(c=>`
+          <tr>
+            <td>${escapeHtml(c.ragione_sociale)}</td>
+            <td>${escapeHtml(c.referente||"-")}</td>
+            <td>${escapeHtml(c.telefono||"-")}</td>
+            <td>${escapeHtml(c.email||"-")}</td>
+            <td>${escapeHtml(c.piva||"-")}</td>
+            <td>${state.data.cantieri.filter(k=>k.cliente_id===c.id).length}</td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireClienti(){
+  document.getElementById("form-cliente").onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      ragione_sociale: document.getElementById("c-ragione").value.trim(),
+      referente: document.getElementById("c-referente").value.trim() || null,
+      telefono: document.getElementById("c-telefono").value.trim() || null,
+      email: document.getElementById("c-email").value.trim() || null,
+      indirizzo: document.getElementById("c-indirizzo").value.trim() || null,
+      piva: document.getElementById("c-piva").value.trim() || null,
+      settore: document.getElementById("c-settore").value.trim() || null,
+      note: document.getElementById("c-note").value.trim() || null,
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("clienti").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+}
+
+// ============================================================
+// CANTIERI
+// ============================================================
+function viewCantieri(){
+  const rows = state.data.cantieri;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    <div class="card">
+      <h2>Nuovo cantiere</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-cantiere">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="k-cliente">${clientiOpts}</select></div>
+          <div><label>Nome cantiere *</label><input required id="k-nome"></div>
+          <div><label>Indirizzo</label><input id="k-indirizzo"></div>
+          <div><label>Referente</label><input id="k-referente"></div>
+          <div><label>Stato</label>
+            <select id="k-stato"><option value="attivo">Attivo</option><option value="sospeso">Sospeso</option><option value="concluso">Concluso</option></select>
+          </div>
+        </div>
+        <label>Note</label><textarea id="k-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva cantiere</button></div>
+      </form>`}
+    </div>
+    <div class="card">
+      <h2>Elenco cantieri (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun cantiere inserito.</div>` : `
+      <table><thead><tr><th>Nome</th><th>Cliente</th><th>Indirizzo</th><th>Referente</th><th>Stato</th><th>Pezzi presenti</th></tr></thead>
+      <tbody>
+        ${rows.map(k=>`
+          <tr>
+            <td>${escapeHtml(k.nome)}</td>
+            <td>${escapeHtml(clienteNome(k.cliente_id))}</td>
+            <td>${escapeHtml(k.indirizzo||"-")}</td>
+            <td>${escapeHtml(k.referente||"-")}</td>
+            <td>${badge(k.stato)}</td>
+            <td>${state.data.pezzi.filter(p=>p.cantiere_id===k.id).length}</td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireCantieri(){
+  const f = document.getElementById("form-cantiere");
+  if(!f) return;
+  f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: document.getElementById("k-cliente").value,
+      nome: document.getElementById("k-nome").value.trim(),
+      indirizzo: document.getElementById("k-indirizzo").value.trim() || null,
+      referente: document.getElementById("k-referente").value.trim() || null,
+      stato: document.getElementById("k-stato").value,
+      note: document.getElementById("k-note").value.trim() || null,
+    };
+    const { error } = await sb.from("cantieri").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+}
+
+// ============================================================
+// MAGAZZINO (ARTICOLI)
+// ============================================================
+function viewMagazzino(){
+  const rows = state.data.articoli;
+  return `
+    <div class="card">
+      <h2>Nuovo articolo</h2>
+      <form id="form-articolo">
+        <div class="form-grid">
+          <div><label>Codice articolo *</label><input required id="a-codice"></div>
+          <div><label>Descrizione *</label><input required id="a-descrizione"></div>
+          <div><label>Dimensioni</label><input id="a-dimensioni" placeholder="es. 5m x 10cm"></div>
+          <div><label>Peso</label><input id="a-peso" placeholder="es. 2.5 kg"></div>
+          <div><label>URL immagine</label><input id="a-immagine" placeholder="https://..."></div>
+        </div>
+        <label>Note</label><textarea id="a-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva articolo</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Catalogo articoli (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun articolo inserito.</div>` : `
+      <table><thead><tr><th>Codice</th><th>Descrizione</th><th>Dimensioni</th><th>Peso</th><th>Pezzi totali</th><th>Disponibili</th></tr></thead>
+      <tbody>
+        ${rows.map(a=>{
+          const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
+          const disp = pezziArt.filter(p=>p.stato==="disponibile").length;
+          return `<tr>
+            <td>${escapeHtml(a.codice)}</td>
+            <td>${escapeHtml(a.descrizione)}</td>
+            <td>${escapeHtml(a.dimensioni||"-")}</td>
+            <td>${escapeHtml(a.peso||"-")}</td>
+            <td>${pezziArt.length}</td>
+            <td>${disp}</td>
+          </tr>`;
+        }).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireMagazzino(){
+  document.getElementById("form-articolo").onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      codice: document.getElementById("a-codice").value.trim(),
+      descrizione: document.getElementById("a-descrizione").value.trim(),
+      dimensioni: document.getElementById("a-dimensioni").value.trim() || null,
+      peso: document.getElementById("a-peso").value.trim() || null,
+      immagine_url: document.getElementById("a-immagine").value.trim() || null,
+      note: document.getElementById("a-note").value.trim() || null,
+    };
+    const { error } = await sb.from("articoli").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+}
+
+// ============================================================
+// PEZZI (DTR)
+// ============================================================
+function viewPezzi(){
+  const rows = state.data.pezzi;
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  return `
+    <div class="card">
+      <h2>Nuovo pezzo</h2>
+      ${state.data.articoli.length===0? `<div class="msg error">Devi prima creare almeno un articolo nel Magazzino.</div>` : `
+      <form id="form-pezzo">
+        <div class="form-grid">
+          <div><label>Articolo *</label><select required id="p-articolo">${articoliOpts}</select></div>
+          <div><label>DTR (codice univoco) *</label><input required id="p-dtr" placeholder="es. DTR-000123"></div>
+          <div><label>Posizione in magazzino</label><input id="p-posizione" placeholder="es. Scaffale A3"></div>
+        </div>
+        <div style="margin-top:10px;"><button type="submit">Salva pezzo</button></div>
+      </form>`}
+    </div>
+    <div class="card">
+      <h2>Elenco pezzi (${rows.length})</h2>
+      <div class="pill-select" id="filtro-stato">
+        <button data-f="tutti" class="active">Tutti</button>
+        <button data-f="disponibile">Disponibili</button>
+        <button data-f="in_uso">In uso</button>
+        <button data-f="in_revisione">In revisione</button>
+        <button data-f="da_riparare">Da riparare</button>
+        <button data-f="danneggiato">Danneggiati</button>
+        <button data-f="fuori_servizio">Fuori servizio</button>
+      </div>
+      <div id="tabella-pezzi"></div>
+    </div>
+  `;
+}
+function renderTabellaPezzi(filtro){
+  let rows = state.data.pezzi;
+  if(filtro && filtro!=="tutti") rows = rows.filter(p=>p.stato===filtro);
+  const html = rows.length===0? `<div class="empty">Nessun pezzo trovato.</div>` : `
+    <table><thead><tr><th>DTR</th><th>Articolo</th><th>Stato</th><th>Posizione</th><th>Cliente/Cantiere</th></tr></thead>
+    <tbody>
+      ${rows.map(p=>`
+        <tr>
+          <td>${escapeHtml(p.dtr)}</td>
+          <td>${escapeHtml(articoloLabel(p.articolo_id))}</td>
+          <td>${badge(p.stato)}</td>
+          <td>${escapeHtml(p.posizione||"-")}</td>
+          <td>${p.cliente_id? escapeHtml(clienteNome(p.cliente_id))+(p.cantiere_id? " / "+escapeHtml(cantiereNome(p.cantiere_id)) : "") : "-"}</td>
+        </tr>
+      `).join("")}
+    </tbody></table>`;
+  document.getElementById("tabella-pezzi").innerHTML = html;
+}
+function wirePezzi(){
+  const f = document.getElementById("form-pezzo");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      articolo_id: document.getElementById("p-articolo").value,
+      dtr: document.getElementById("p-dtr").value.trim(),
+      posizione: document.getElementById("p-posizione").value.trim() || null,
+      stato: "disponibile",
+    };
+    const { error } = await sb.from("pezzi").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  renderTabellaPezzi("tutti");
+  document.querySelectorAll("#filtro-stato button").forEach(b=>{
+    b.onclick = ()=>{
+      document.querySelectorAll("#filtro-stato button").forEach(x=>x.classList.remove("active"));
+      b.classList.add("active");
+      renderTabellaPezzi(b.dataset.f);
+    };
+  });
+}
+
+// ============================================================
+// SERVICE ORDER + CARRELLO
+// ============================================================
+function viewServiceOrder(){
+  if(state.soAperto){
+    return viewServiceOrderDettaglio(state.soAperto);
+  }
+  const rows = state.data.serviceOrders;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    <div class="card">
+      <h2>Nuovo Service Order</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-so">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="so-cliente">${clientiOpts}</select></div>
+          <div><label>Cantiere</label><select id="so-cantiere"><option value="">-- nessuno --</option></select></div>
+        </div>
+        <label>Note</label><textarea id="so-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Crea Service Order</button></div>
+      </form>`}
+    </div>
+    <div class="card">
+      <h2>Elenco Service Order (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun Service Order creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Apertura</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(s=>`
+          <tr>
+            <td>#${s.numero}</td>
+            <td>${escapeHtml(clienteNome(s.cliente_id))}</td>
+            <td>${escapeHtml(cantiereNome(s.cantiere_id))}</td>
+            <td>${badge(s.stato)}</td>
+            <td>${fmtDate(s.data_apertura)}</td>
+            <td><button class="secondary btn-apri-so" data-id="${s.id}">Apri</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireServiceOrder(){
+  if(state.soAperto){ wireServiceOrderDettaglio(state.soAperto); return; }
+  const selCliente = document.getElementById("so-cliente");
+  const selCantiere = document.getElementById("so-cantiere");
+  function aggiornaCantieri(){
+    if(!selCliente) return;
+    const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
+      .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
+    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+  }
+  if(selCliente){
+    aggiornaCantieri();
+    selCliente.onchange = aggiornaCantieri;
+  }
+  const f = document.getElementById("form-so");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: selCliente.value,
+      cantiere_id: selCantiere.value || null,
+      note: document.getElementById("so-note").value.trim() || null,
+      stato: "aperto",
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("service_orders").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-apri-so").forEach(b=>{
+    b.onclick = ()=>{ state.soAperto = b.dataset.id; render(); };
+  });
+}
+
+function viewServiceOrderDettaglio(id){
+  const so = state.data.serviceOrders.find(s=>s.id===id);
+  if(!so){ state.soAperto=null; return viewServiceOrder(); }
+  const righe = state.data.righe.filter(r=>r.service_order_id===id);
+  const pezziDisponibili = state.data.pezzi.filter(p=>p.stato==="disponibile");
+  const pezziQui = state.data.pezzi.filter(p=>p.cliente_id===so.cliente_id && (!so.cantiere_id || p.cantiere_id===so.cantiere_id) && p.stato==="in_uso");
+  const optsDisponibili = pezziDisponibili.map(p=>`<option value="${p.id}">${escapeHtml(p.dtr)} - ${escapeHtml(articoloLabel(p.articolo_id))}</option>`).join("");
+  const optsQui = pezziQui.map(p=>`<option value="${p.id}">${escapeHtml(p.dtr)} - ${escapeHtml(articoloLabel(p.articolo_id))}</option>`).join("");
+  return `
+    <button class="secondary" id="btn-torna-so">&larr; Torna all'elenco</button>
+    <div class="card" style="margin-top:14px;">
+      <h2>Service Order #${so.numero} ${badge(so.stato)}</h2>
+      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(so.cliente_id))} &nbsp;
+         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(so.cantiere_id))} &nbsp;
+         <strong>Aperto il:</strong> ${fmtDate(so.data_apertura)}</p>
+      ${so.note? `<p><em>${escapeHtml(so.note)}</em></p>` : ""}
+      <div class="actions">
+        ${so.stato!=="chiuso" && so.stato!=="annullato" ? `<button class="secondary" id="btn-chiudi-so">Chiudi Service Order</button>` : ""}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Carrello - Prelievo materiale</h2>
+      ${pezziDisponibili.length===0? `<div class="empty">Nessun pezzo disponibile in magazzino.</div>` : `
+      <form id="form-prelievo">
+        <div class="form-grid">
+          <div><label>Pezzo (DTR) disponibile</label><select required id="pr-pezzo">${optsDisponibili}</select></div>
+        </div>
+        <button type="submit">Preleva (scansione DTR)</button>
+      </form>`}
+    </div>
+
+    <div class="card">
+      <h2>Restituzione materiale</h2>
+      ${pezziQui.length===0? `<div class="empty">Nessun pezzo attualmente presso questo cliente/cantiere.</div>` : `
+      <form id="form-reso">
+        <div class="form-grid">
+          <div><label>Pezzo (DTR) da restituire</label><select required id="re-pezzo">${optsQui}</select></div>
+          <div><label>Nuovo stato del pezzo</label>
+            <select id="re-stato">
+              <option value="disponibile">Disponibile</option>
+              <option value="in_revisione">In revisione</option>
+              <option value="da_riparare">Da riparare</option>
+              <option value="danneggiato">Danneggiato</option>
+              <option value="fuori_servizio">Fuori servizio</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit">Registra reso</button>
+      </form>`}
+    </div>
+
+    <div class="card">
+      <h2>Storico movimenti (${righe.length})</h2>
+      ${righe.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
+      <table><thead><tr><th>Data</th><th>Azione</th><th>Pezzo</th></tr></thead>
+      <tbody>
+        ${righe.map(r=>`<tr><td>${fmtDate(r.data)}</td><td>${r.azione==="prelievo"?"Prelievo":"Reso"}</td><td>${escapeHtml(pezzoLabel(r.pezzo_id))}</td></tr>`).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireServiceOrderDettaglio(id){
+  document.getElementById("btn-torna-so").onclick = ()=>{ state.soAperto=null; render(); };
+  const so = state.data.serviceOrders.find(s=>s.id===id);
+  const btnChiudi = document.getElementById("btn-chiudi-so");
+  if(btnChiudi) btnChiudi.onclick = async ()=>{
+    const { error } = await sb.from("service_orders").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const fPrelievo = document.getElementById("form-prelievo");
+  if(fPrelievo) fPrelievo.onsubmit = async (e)=>{
+    e.preventDefault();
+    const pezzoId = document.getElementById("pr-pezzo").value;
+    const { error: e1 } = await sb.from("pezzi").update({
+      stato:"in_uso", cliente_id: so.cliente_id, cantiere_id: so.cantiere_id, updated_at: new Date().toISOString()
+    }).eq("id", pezzoId);
+    if(e1){ alert("Errore: "+e1.message); return; }
+    const { error: e2 } = await sb.from("service_order_righe").insert({ service_order_id: id, pezzo_id: pezzoId, azione:"prelievo" });
+    if(e2){ alert("Errore: "+e2.message); return; }
+    render();
+  };
+  const fReso = document.getElementById("form-reso");
+  if(fReso) fReso.onsubmit = async (e)=>{
+    e.preventDefault();
+    const pezzoId = document.getElementById("re-pezzo").value;
+    const nuovoStato = document.getElementById("re-stato").value;
+    const { error: e1 } = await sb.from("pezzi").update({
+      stato: nuovoStato, cliente_id: null, cantiere_id: null, updated_at: new Date().toISOString()
+    }).eq("id", pezzoId);
+    if(e1){ alert("Errore: "+e1.message); return; }
+    const { error: e2 } = await sb.from("service_order_righe").insert({ service_order_id: id, pezzo_id: pezzoId, azione:"reso" });
+    if(e2){ alert("Errore: "+e2.message); return; }
+    render();
+  };
+}
+
+// ============================================================
+// AVVIO
+// ============================================================
+initAuth();
+</script>
+</body>
+</html>
