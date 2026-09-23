@@ -91,9 +91,10 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
   session: null,
   view: "dashboard",
-  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [] },
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [] },
   authMode: "login", // login | signup
   soAperto: null, // id service order aperto nel dettaglio
+  preventivoAperto: null, // id preventivo aperto nel dettaglio
 };
 
 const app = document.getElementById("app");
@@ -142,7 +143,7 @@ async function handleLogout(){
 // CARICAMENTO DATI
 // ============================================================
 async function loadAll(){
-  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles] = await Promise.all([
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe] = await Promise.all([
     sb.from("clienti").select("*").order("created_at",{ascending:false}),
     sb.from("cantieri").select("*").order("created_at",{ascending:false}),
     sb.from("articoli").select("*").order("created_at",{ascending:false}),
@@ -150,6 +151,9 @@ async function loadAll(){
     sb.from("service_orders").select("*").order("data_apertura",{ascending:false}),
     sb.from("service_order_righe").select("*").order("data",{ascending:false}),
     sb.from("profiles").select("*").order("created_at",{ascending:false}),
+    sb.from("listino_prezzi").select("*"),
+    sb.from("preventivi").select("*").order("data_creazione",{ascending:false}),
+    sb.from("preventivo_righe").select("*"),
   ]);
   state.data.clienti = clienti.data || [];
   state.data.cantieri = cantieri.data || [];
@@ -158,6 +162,9 @@ async function loadAll(){
   state.data.serviceOrders = serviceOrders.data || [];
   state.data.righe = righe.data || [];
   state.data.profiles = profiles.data || [];
+  state.data.listino = listino.data || [];
+  state.data.preventivi = preventivi.data || [];
+  state.data.preventivoRighe = preventivoRighe.data || [];
 }
 
 function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
@@ -167,6 +174,19 @@ function pezzoLabel(id){ const p = state.data.pezzi.find(x=>x.id===id); return p
 function myProfile(){ return state.session ? state.data.profiles.find(p=>p.id===state.session.user.id) : null; }
 function myRole(){ const p = myProfile(); return p ? p.ruolo : null; }
 function ruoloLabel(r){ const map={admin:"Amministratore",magazzino:"Magazzino",commerciale:"Commerciale",contabile:"Contabile"}; return map[r]||r; }
+function prezzoArticolo(articoloId){ return state.data.listino.find(l=>l.articolo_id===articoloId) || null; }
+function fmtMoney(n){ if(n==null || isNaN(n)) return "-"; return Number(n).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})+" €"; }
+function tipoPrezzoLabel(t){ const map={vendita:"Vendita",noleggio_giornaliero:"Noleggio giorno",noleggio_settimanale:"Noleggio settimana",noleggio_mensile:"Noleggio mese"}; return map[t]||t; }
+function totaleRiga(r){ return r.quantita * r.prezzo_unitario * (1 - (r.sconto_percentuale||0)/100); }
+function totalePreventivo(preventivoId){
+  const righe = state.data.preventivoRighe.filter(r=>r.preventivo_id===preventivoId);
+  const sub = righe.reduce((s,r)=>s+totaleRiga(r),0);
+  const prev = state.data.preventivi.find(p=>p.id===preventivoId);
+  const scontoGlobale = prev ? (prev.sconto_percentuale||0) : 0;
+  return sub * (1 - scontoGlobale/100);
+}
+function statoPreventivoLabelClass(s){ const map={bozza:"in_revisione",inviato:"in_uso",accettato:"chiuso",rifiutato:"danneggiato"}; return map[s]||s; }
+function statoPreventivoLabel(s){ const map={bozza:"Bozza",inviato:"Inviato",accettato:"Accettato",rifiutato:"Rifiutato"}; return map[s]||s; }
 
 // ============================================================
 // RENDER PRINCIPALE
@@ -179,11 +199,14 @@ async function render(){
   await loadAll();
   const ruolo = myRole();
   const vedeMagazzino = ruolo!=="contabile"; // contabile non vede magazzino/pezzi/service order
+  const vedePrezzi = ruolo!=="magazzino"; // il magazzino non vede prezzi/listino/preventivi
   const navItems = [["dashboard","Dashboard",true],
     ["clienti","Clienti",true],
     ["cantieri","Cantieri",true],
     ["magazzino","Magazzino",vedeMagazzino],
     ["pezzi","Pezzi (DTR)",vedeMagazzino],
+    ["listino","Listino prezzi",vedePrezzi],
+    ["preventivi","Preventivi",vedePrezzi],
     ["serviceorder","Service Order",vedeMagazzino],
     ["utenti","Utenti",ruolo==="admin"]];
   if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = "dashboard";
@@ -201,7 +224,7 @@ async function render(){
   `;
   document.getElementById("btn-logout").onclick = handleLogout;
   document.querySelectorAll("#main-nav button").forEach(b=>{
-    b.onclick = ()=>{ state.view = b.dataset.view; state.soAperto=null; render(); };
+    b.onclick = ()=>{ state.view = b.dataset.view; state.soAperto=null; state.preventivoAperto=null; render(); };
   });
 
   const main = document.getElementById("main-content");
@@ -210,6 +233,8 @@ async function render(){
   if(state.view==="cantieri") { main.innerHTML = viewCantieri(); wireCantieri(); }
   if(state.view==="magazzino") { main.innerHTML = viewMagazzino(); wireMagazzino(); }
   if(state.view==="pezzi") { main.innerHTML = viewPezzi(); wirePezzi(); }
+  if(state.view==="listino") { main.innerHTML = viewListino(); wireListino(); }
+  if(state.view==="preventivi") { main.innerHTML = viewPreventivi(); wirePreventivi(); }
   if(state.view==="serviceorder") { main.innerHTML = viewServiceOrder(); wireServiceOrder(); }
   if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
 }
@@ -750,6 +775,255 @@ function wireServiceOrderDettaglio(id){
 }
 
 // ============================================================
+// LISTINO PREZZI
+// ============================================================
+function viewListino(){
+  const puoModificare = ["commerciale","admin"].includes(myRole());
+  const rows = state.data.articoli;
+  return `
+    <div class="card">
+      <h2>Listino prezzi</h2>
+      <p><small class="hint">Un prezzo per ogni articolo: vendita, noleggio (giorno/settimana/mese) e IVA.</small></p>
+      ${rows.length===0? `<div class="empty">Nessun articolo a catalogo. Creane uno nel Magazzino.</div>` : `
+      <table><thead><tr><th>Articolo</th><th>Vendita</th><th>Noleggio/giorno</th><th>Noleggio/settimana</th><th>Noleggio/mese</th><th>IVA %</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <tbody>
+        ${rows.map(a=>{
+          const l = prezzoArticolo(a.id) || {};
+          if(!puoModificare){
+            return `<tr>
+              <td>${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</td>
+              <td>${fmtMoney(l.prezzo_vendita)}</td>
+              <td>${fmtMoney(l.prezzo_noleggio_giornaliero)}</td>
+              <td>${fmtMoney(l.prezzo_noleggio_settimanale)}</td>
+              <td>${fmtMoney(l.prezzo_noleggio_mensile)}</td>
+              <td>${l.iva_percentuale!=null? l.iva_percentuale+"%" : "-"}</td>
+            </tr>`;
+          }
+          return `<tr data-articolo="${a.id}">
+            <td>${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</td>
+            <td><input type="number" step="0.01" class="lp-vendita" value="${l.prezzo_vendita??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-giorno" value="${l.prezzo_noleggio_giornaliero??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-settimana" value="${l.prezzo_noleggio_settimanale??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-mese" value="${l.prezzo_noleggio_mensile??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-iva" value="${l.iva_percentuale??22}" style="width:70px;"></td>
+            <td><button class="secondary btn-salva-prezzo" data-id="${a.id}">Salva</button></td>
+          </tr>`;
+        }).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireListino(){
+  document.querySelectorAll(".btn-salva-prezzo").forEach(btn=>{
+    btn.onclick = async ()=>{
+      const tr = btn.closest("tr");
+      const payload = {
+        articolo_id: btn.dataset.id,
+        prezzo_vendita: parseFloat(tr.querySelector(".lp-vendita").value) || null,
+        prezzo_noleggio_giornaliero: parseFloat(tr.querySelector(".lp-giorno").value) || null,
+        prezzo_noleggio_settimanale: parseFloat(tr.querySelector(".lp-settimana").value) || null,
+        prezzo_noleggio_mensile: parseFloat(tr.querySelector(".lp-mese").value) || null,
+        iva_percentuale: parseFloat(tr.querySelector(".lp-iva").value) || 0,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await sb.from("listino_prezzi").upsert(payload, { onConflict: "articolo_id" });
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+}
+
+// ============================================================
+// PREVENTIVI
+// ============================================================
+function viewPreventivi(){
+  if(state.preventivoAperto) return viewPreventivoDettaglio(state.preventivoAperto);
+  const rows = state.data.preventivi;
+  const puoModificare = ["commerciale","admin"].includes(myRole());
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    ${!puoModificare? "" : `
+    <div class="card">
+      <h2>Nuovo preventivo</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-preventivo">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="pv-cliente">${clientiOpts}</select></div>
+          <div><label>Cantiere</label><select id="pv-cantiere"><option value="">-- nessuno --</option></select></div>
+          <div><label>Sconto complessivo %</label><input type="number" step="0.01" id="pv-sconto" value="0"></div>
+        </div>
+        <label>Note</label><textarea id="pv-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Crea preventivo</button></div>
+      </form>`}
+    </div>`}
+    <div class="card">
+      <h2>Elenco preventivi (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun preventivo creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Totale</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(p=>`
+          <tr>
+            <td>#${p.numero}</td>
+            <td>${escapeHtml(clienteNome(p.cliente_id))}</td>
+            <td>${escapeHtml(cantiereNome(p.cantiere_id))}</td>
+            <td><span class="badge ${statoPreventivoLabelClass(p.stato)}">${statoPreventivoLabel(p.stato)}</span></td>
+            <td>${fmtMoney(totalePreventivo(p.id))}</td>
+            <td><button class="secondary btn-apri-pv" data-id="${p.id}">Apri</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wirePreventivi(){
+  if(state.preventivoAperto){ wirePreventivoDettaglio(state.preventivoAperto); return; }
+  const selCliente = document.getElementById("pv-cliente");
+  const selCantiere = document.getElementById("pv-cantiere");
+  function aggiornaCantieri(){
+    if(!selCliente) return;
+    const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
+      .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
+    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+  }
+  if(selCliente){ aggiornaCantieri(); selCliente.onchange = aggiornaCantieri; }
+  const f = document.getElementById("form-preventivo");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: selCliente.value,
+      cantiere_id: selCantiere.value || null,
+      sconto_percentuale: parseFloat(document.getElementById("pv-sconto").value) || 0,
+      note: document.getElementById("pv-note").value.trim() || null,
+      stato: "bozza",
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("preventivi").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-apri-pv").forEach(b=>{
+    b.onclick = ()=>{ state.preventivoAperto = b.dataset.id; render(); };
+  });
+}
+
+function viewPreventivoDettaglio(id){
+  const pv = state.data.preventivi.find(p=>p.id===id);
+  if(!pv){ state.preventivoAperto=null; return viewPreventivi(); }
+  const puoModificare = ["commerciale","admin"].includes(myRole());
+  const righe = state.data.preventivoRighe.filter(r=>r.preventivo_id===id);
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  const soCollegato = state.data.serviceOrders.find(s=>s.preventivo_id===id);
+  return `
+    <button class="secondary" id="btn-torna-pv">&larr; Torna all'elenco</button>
+    <div class="card" style="margin-top:14px;">
+      <h2>Preventivo #${pv.numero} <span class="badge ${statoPreventivoLabelClass(pv.stato)}">${statoPreventivoLabel(pv.stato)}</span></h2>
+      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(pv.cliente_id))} &nbsp;
+         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(pv.cantiere_id))} &nbsp;
+         <strong>Sconto complessivo:</strong> ${pv.sconto_percentuale||0}%</p>
+      ${pv.note? `<p><em>${escapeHtml(pv.note)}</em></p>` : ""}
+      ${puoModificare? `
+      <div class="actions">
+        ${pv.stato==="bozza"? `<button class="secondary btn-stato-pv" data-stato="inviato">Segna come inviato</button>` : ""}
+        ${pv.stato==="inviato"? `<button class="secondary btn-stato-pv" data-stato="accettato">Segna come accettato</button><button class="secondary btn-stato-pv" data-stato="rifiutato">Segna come rifiutato</button>` : ""}
+        ${pv.stato==="accettato" && !soCollegato? `<button id="btn-crea-so-da-pv">Crea Service Order da questo preventivo</button>` : ""}
+        ${soCollegato? `<span class="hint">Service Order collegato: #${soCollegato.numero}</span>` : ""}
+      </div>` : ""}
+    </div>
+    <div class="card">
+      <h2>Righe (${righe.length}) — Totale: ${fmtMoney(totalePreventivo(id))}</h2>
+      ${righe.length===0? `<div class="empty">Nessuna riga aggiunta.</div>` : `
+      <table><thead><tr><th>Articolo</th><th>Tipo</th><th>Quantità</th><th>Prezzo unit.</th><th>Sconto %</th><th>Totale riga</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <tbody>
+        ${righe.map(r=>`
+          <tr>
+            <td>${escapeHtml(articoloLabel(r.articolo_id))}</td>
+            <td>${tipoPrezzoLabel(r.tipo_prezzo)}</td>
+            <td>${r.quantita}</td>
+            <td>${fmtMoney(r.prezzo_unitario)}</td>
+            <td>${r.sconto_percentuale||0}%</td>
+            <td>${fmtMoney(totaleRiga(r))}</td>
+            ${puoModificare? `<td><button class="secondary btn-rimuovi-riga" data-id="${r.id}">Rimuovi</button></td>` : ""}
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+      ${puoModificare? `
+      <h3 style="margin-top:18px;">Aggiungi riga</h3>
+      <form id="form-riga-pv">
+        <div class="form-grid">
+          <div><label>Articolo *</label><select required id="rp-articolo">${articoliOpts}</select></div>
+          <div><label>Tipo prezzo</label>
+            <select id="rp-tipo">
+              <option value="vendita">Vendita</option>
+              <option value="noleggio_giornaliero">Noleggio giorno</option>
+              <option value="noleggio_settimanale">Noleggio settimana</option>
+              <option value="noleggio_mensile">Noleggio mese</option>
+            </select>
+          </div>
+          <div><label>Quantità</label><input type="number" step="0.01" id="rp-quantita" value="1"></div>
+          <div><label>Prezzo unitario</label><input type="number" step="0.01" id="rp-prezzo" required></div>
+          <div><label>Sconto %</label><input type="number" step="0.01" id="rp-sconto" value="0"></div>
+        </div>
+        <button type="submit">Aggiungi riga</button>
+      </form>` : ""}
+    </div>
+  `;
+}
+function wirePreventivoDettaglio(id){
+  document.getElementById("btn-torna-pv").onclick = ()=>{ state.preventivoAperto=null; render(); };
+  document.querySelectorAll(".btn-stato-pv").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("preventivi").update({ stato: b.dataset.stato }).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+  const btnCreaSO = document.getElementById("btn-crea-so-da-pv");
+  if(btnCreaSO) btnCreaSO.onclick = async ()=>{
+    const pv = state.data.preventivi.find(p=>p.id===id);
+    const { error } = await sb.from("service_orders").insert({
+      cliente_id: pv.cliente_id, cantiere_id: pv.cantiere_id, preventivo_id: pv.id,
+      stato: "aperto", created_by: state.session.user.id,
+    });
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const rpArticolo = document.getElementById("rp-articolo");
+  const rpTipo = document.getElementById("rp-tipo");
+  const rpPrezzo = document.getElementById("rp-prezzo");
+  function autoPrezzo(){
+    if(!rpArticolo) return;
+    const l = prezzoArticolo(rpArticolo.value);
+    if(!l) return;
+    const map = { vendita:"prezzo_vendita", noleggio_giornaliero:"prezzo_noleggio_giornaliero", noleggio_settimanale:"prezzo_noleggio_settimanale", noleggio_mensile:"prezzo_noleggio_mensile" };
+    const v = l[map[rpTipo.value]];
+    if(v!=null) rpPrezzo.value = v;
+  }
+  if(rpArticolo){ autoPrezzo(); rpArticolo.onchange = autoPrezzo; rpTipo.onchange = autoPrezzo; }
+  const fRiga = document.getElementById("form-riga-pv");
+  if(fRiga) fRiga.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      preventivo_id: id,
+      articolo_id: rpArticolo.value,
+      tipo_prezzo: rpTipo.value,
+      quantita: parseFloat(document.getElementById("rp-quantita").value) || 1,
+      prezzo_unitario: parseFloat(rpPrezzo.value) || 0,
+      sconto_percentuale: parseFloat(document.getElementById("rp-sconto").value) || 0,
+    };
+    const { error } = await sb.from("preventivo_righe").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-rimuovi-riga").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("preventivo_righe").delete().eq("id", b.dataset.id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+}
+
+// ============================================================
 // UTENTI E RUOLI (solo admin)
 // ============================================================
 function viewUtenti(){
@@ -795,5 +1069,3 @@ initAuth();
 </script>
 </body>
 </html>
-
-
