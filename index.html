@@ -91,7 +91,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
   session: null,
   view: "dashboard",
-  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [] },
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [] },
   authMode: "login", // login | signup
   soAperto: null, // id service order aperto nel dettaglio
 };
@@ -142,13 +142,14 @@ async function handleLogout(){
 // CARICAMENTO DATI
 // ============================================================
 async function loadAll(){
-  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe] = await Promise.all([
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles] = await Promise.all([
     sb.from("clienti").select("*").order("created_at",{ascending:false}),
     sb.from("cantieri").select("*").order("created_at",{ascending:false}),
     sb.from("articoli").select("*").order("created_at",{ascending:false}),
     sb.from("pezzi").select("*").order("created_at",{ascending:false}),
     sb.from("service_orders").select("*").order("data_apertura",{ascending:false}),
     sb.from("service_order_righe").select("*").order("data",{ascending:false}),
+    sb.from("profiles").select("*").order("created_at",{ascending:false}),
   ]);
   state.data.clienti = clienti.data || [];
   state.data.cantieri = cantieri.data || [];
@@ -156,12 +157,16 @@ async function loadAll(){
   state.data.pezzi = pezzi.data || [];
   state.data.serviceOrders = serviceOrders.data || [];
   state.data.righe = righe.data || [];
+  state.data.profiles = profiles.data || [];
 }
 
 function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
 function cantiereNome(id){ const c = state.data.cantieri.find(x=>x.id===id); return c ? c.nome : "-"; }
 function articoloLabel(id){ const a = state.data.articoli.find(x=>x.id===id); return a ? `${a.codice} - ${a.descrizione}` : "-"; }
 function pezzoLabel(id){ const p = state.data.pezzi.find(x=>x.id===id); return p ? `${p.dtr} (${articoloLabel(p.articolo_id)})` : "-"; }
+function myProfile(){ return state.session ? state.data.profiles.find(p=>p.id===state.session.user.id) : null; }
+function myRole(){ const p = myProfile(); return p ? p.ruolo : null; }
+function ruoloLabel(r){ const map={admin:"Amministratore",magazzino:"Magazzino",commerciale:"Commerciale",contabile:"Contabile"}; return map[r]||r; }
 
 // ============================================================
 // RENDER PRINCIPALE
@@ -171,22 +176,27 @@ async function render(){
     renderLogin();
     return;
   }
+  await loadAll();
+  const ruolo = myRole();
+  const vedeMagazzino = ruolo!=="contabile"; // contabile non vede magazzino/pezzi/service order
+  const navItems = [["dashboard","Dashboard",true],
+    ["clienti","Clienti",true],
+    ["cantieri","Cantieri",true],
+    ["magazzino","Magazzino",vedeMagazzino],
+    ["pezzi","Pezzi (DTR)",vedeMagazzino],
+    ["serviceorder","Service Order",vedeMagazzino],
+    ["utenti","Utenti",ruolo==="admin"]];
+  if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = "dashboard";
+
   app.innerHTML = `
     <header>
       <h1>Gestionale Aziendale</h1>
       <div class="user-box">
-        <span>${escapeHtml(state.session.user.email)}</span>
+        <span>${escapeHtml(state.session.user.email)} ${ruolo? `<span class="badge in_uso">${escapeHtml(ruoloLabel(ruolo))}</span>` : ""}</span>
         <button class="secondary" id="btn-logout">Esci</button>
       </div>
     </header>
-    <nav id="main-nav">
-      ${navBtn("dashboard","Dashboard")}
-      ${navBtn("clienti","Clienti")}
-      ${navBtn("cantieri","Cantieri")}
-      ${navBtn("magazzino","Magazzino")}
-      ${navBtn("pezzi","Pezzi (DTR)")}
-      ${navBtn("serviceorder","Service Order")}
-    </nav>
+    <nav id="main-nav">${navItems.filter(n=>n[2]).map(n=>navBtn(n[0],n[1])).join("")}</nav>
     <main id="main-content"><div class="empty">Caricamento...</div></main>
   `;
   document.getElementById("btn-logout").onclick = handleLogout;
@@ -194,7 +204,6 @@ async function render(){
     b.onclick = ()=>{ state.view = b.dataset.view; state.soAperto=null; render(); };
   });
 
-  await loadAll();
   const main = document.getElementById("main-content");
   if(state.view==="dashboard") main.innerHTML = viewDashboard();
   if(state.view==="clienti") { main.innerHTML = viewClienti(); wireClienti(); }
@@ -202,6 +211,7 @@ async function render(){
   if(state.view==="magazzino") { main.innerHTML = viewMagazzino(); wireMagazzino(); }
   if(state.view==="pezzi") { main.innerHTML = viewPezzi(); wirePezzi(); }
   if(state.view==="serviceorder") { main.innerHTML = viewServiceOrder(); wireServiceOrder(); }
+  if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
 }
 
 function navBtn(view, label){
@@ -301,7 +311,9 @@ function viewDashboard(){
 // ============================================================
 function viewClienti(){
   const rows = state.data.clienti;
+  const puoModificare = ["commerciale","contabile","admin"].includes(myRole());
   return `
+    ${!puoModificare? "" : `
     <div class="card">
       <h2>Nuovo cliente</h2>
       <form id="form-cliente">
@@ -317,7 +329,7 @@ function viewClienti(){
         <label>Note</label><textarea id="c-note"></textarea>
         <div style="margin-top:10px;"><button type="submit">Salva cliente</button></div>
       </form>
-    </div>
+    </div>`}
     <div class="card">
       <h2>Elenco clienti (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun cliente inserito.</div>` : `
@@ -338,7 +350,9 @@ function viewClienti(){
   `;
 }
 function wireClienti(){
-  document.getElementById("form-cliente").onsubmit = async (e)=>{
+  const f = document.getElementById("form-cliente");
+  if(!f) return;
+  f.onsubmit = async (e)=>{
     e.preventDefault();
     const payload = {
       ragione_sociale: document.getElementById("c-ragione").value.trim(),
@@ -362,8 +376,10 @@ function wireClienti(){
 // ============================================================
 function viewCantieri(){
   const rows = state.data.cantieri;
+  const puoModificare = ["commerciale","contabile","admin"].includes(myRole());
   const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
   return `
+    ${!puoModificare? "" : `
     <div class="card">
       <h2>Nuovo cantiere</h2>
       ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
@@ -380,7 +396,7 @@ function viewCantieri(){
         <label>Note</label><textarea id="k-note"></textarea>
         <div style="margin-top:10px;"><button type="submit">Salva cantiere</button></div>
       </form>`}
-    </div>
+    </div>`}
     <div class="card">
       <h2>Elenco cantieri (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun cantiere inserito.</div>` : `
@@ -424,7 +440,9 @@ function wireCantieri(){
 // ============================================================
 function viewMagazzino(){
   const rows = state.data.articoli;
+  const puoModificare = ["magazzino","admin"].includes(myRole());
   return `
+    ${!puoModificare? "" : `
     <div class="card">
       <h2>Nuovo articolo</h2>
       <form id="form-articolo">
@@ -438,7 +456,7 @@ function viewMagazzino(){
         <label>Note</label><textarea id="a-note"></textarea>
         <div style="margin-top:10px;"><button type="submit">Salva articolo</button></div>
       </form>
-    </div>
+    </div>`}
     <div class="card">
       <h2>Catalogo articoli (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun articolo inserito.</div>` : `
@@ -461,7 +479,9 @@ function viewMagazzino(){
   `;
 }
 function wireMagazzino(){
-  document.getElementById("form-articolo").onsubmit = async (e)=>{
+  const f = document.getElementById("form-articolo");
+  if(!f) return;
+  f.onsubmit = async (e)=>{
     e.preventDefault();
     const payload = {
       codice: document.getElementById("a-codice").value.trim(),
@@ -482,8 +502,10 @@ function wireMagazzino(){
 // ============================================================
 function viewPezzi(){
   const rows = state.data.pezzi;
+  const puoModificare = ["magazzino","admin"].includes(myRole());
   const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
   return `
+    ${!puoModificare? "" : `
     <div class="card">
       <h2>Nuovo pezzo</h2>
       ${state.data.articoli.length===0? `<div class="msg error">Devi prima creare almeno un articolo nel Magazzino.</div>` : `
@@ -495,7 +517,7 @@ function viewPezzi(){
         </div>
         <div style="margin-top:10px;"><button type="submit">Salva pezzo</button></div>
       </form>`}
-    </div>
+    </div>`}
     <div class="card">
       <h2>Elenco pezzi (${rows.length})</h2>
       <div class="pill-select" id="filtro-stato">
@@ -561,8 +583,10 @@ function viewServiceOrder(){
     return viewServiceOrderDettaglio(state.soAperto);
   }
   const rows = state.data.serviceOrders;
+  const puoCreare = ["commerciale","admin"].includes(myRole());
   const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
   return `
+    ${!puoCreare? "" : `
     <div class="card">
       <h2>Nuovo Service Order</h2>
       ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
@@ -574,7 +598,7 @@ function viewServiceOrder(){
         <label>Note</label><textarea id="so-note"></textarea>
         <div style="margin-top:10px;"><button type="submit">Crea Service Order</button></div>
       </form>`}
-    </div>
+    </div>`}
     <div class="card">
       <h2>Elenco Service Order (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun Service Order creato.</div>` : `
@@ -726,9 +750,50 @@ function wireServiceOrderDettaglio(id){
 }
 
 // ============================================================
+// UTENTI E RUOLI (solo admin)
+// ============================================================
+function viewUtenti(){
+  const rows = state.data.profiles;
+  return `
+    <div class="card">
+      <h2>Utenti e ruoli</h2>
+      <p><small class="hint">Assegna a ciascun utente il ruolo corretto. Magazzino: gestisce quantità e pezzi. Commerciale: gestisce clienti/cantieri. Contabile: vede clienti/cantieri (non il magazzino). Admin: accesso completo.</small></p>
+      <table><thead><tr><th>Utente</th><th>Ruolo attuale</th><th>Cambia ruolo</th></tr></thead>
+      <tbody>
+        ${rows.map(p=>`
+          <tr>
+            <td>${escapeHtml(p.full_name||"-")}</td>
+            <td>${badge(p.ruolo==="admin"?"chiuso":p.ruolo==="magazzino"?"disponibile":p.ruolo==="commerciale"?"in_uso":"in_revisione")} ${escapeHtml(ruoloLabel(p.ruolo))}</td>
+            <td>
+              <select data-id="${p.id}" class="sel-ruolo">
+                <option value="admin" ${p.ruolo==="admin"?"selected":""}>Amministratore</option>
+                <option value="magazzino" ${p.ruolo==="magazzino"?"selected":""}>Magazzino</option>
+                <option value="commerciale" ${p.ruolo==="commerciale"?"selected":""}>Commerciale</option>
+                <option value="contabile" ${p.ruolo==="contabile"?"selected":""}>Contabile</option>
+              </select>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody></table>
+    </div>
+  `;
+}
+function wireUtenti(){
+  document.querySelectorAll(".sel-ruolo").forEach(sel=>{
+    sel.onchange = async ()=>{
+      const { error } = await sb.from("profiles").update({ ruolo: sel.value }).eq("id", sel.dataset.id);
+      if(error){ alert("Errore: "+error.message); render(); return; }
+      render();
+    };
+  });
+}
+
+// ============================================================
 // AVVIO
 // ============================================================
 initAuth();
 </script>
 </body>
 </html>
+
+
