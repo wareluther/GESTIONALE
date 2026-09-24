@@ -906,6 +906,60 @@ function wirePreventivi(){
   });
 }
 
+function stampaPreventivo(id){
+  const pv = state.data.preventivi.find(p=>p.id===id);
+  if(!pv) return;
+  const righe = state.data.preventivoRighe.filter(r=>r.preventivo_id===id);
+  const cliente = state.data.clienti.find(c=>c.id===pv.cliente_id) || {};
+  const righeHtml = righe.map(r=>`
+    <tr>
+      <td>${escapeHtml(articoloLabel(r.articolo_id))}</td>
+      <td>${tipoPrezzoLabel(r.tipo_prezzo)}</td>
+      <td style="text-align:right;">${r.quantita}</td>
+      <td style="text-align:right;">${fmtMoney(r.prezzo_unitario)}</td>
+      <td style="text-align:right;">${r.sconto_percentuale||0}%</td>
+      <td style="text-align:right;">${fmtMoney(totaleRiga(r))}</td>
+    </tr>`).join("");
+  const html = `<!DOCTYPE html>
+<html lang="it"><head><meta charset="UTF-8"><title>Preventivo #${pv.numero}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#1c2530;margin:40px;}
+  h1{font-size:22px;margin-bottom:0;}
+  .sub{color:#66707d;margin-top:4px;margin-bottom:28px;}
+  table{width:100%;border-collapse:collapse;margin-top:16px;}
+  th,td{padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px;text-align:left;}
+  th{background:#f4f6f9;}
+  .tot{font-size:16px;font-weight:bold;text-align:right;margin-top:14px;}
+  .info{display:flex;justify-content:space-between;margin-bottom:10px;}
+  .box{border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:20px;}
+  @media print{ button{display:none;} }
+</style></head>
+<body>
+  <h1>Preventivo #${pv.numero}</h1>
+  <p class="sub">Data: ${fmtDate(pv.data_creazione)} — Stato: ${statoPreventivoLabel(pv.stato)}</p>
+  <div class="box">
+    <strong>Cliente:</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
+    ${cliente.referente? `Referente: ${escapeHtml(cliente.referente)}<br>` : ""}
+    ${cliente.indirizzo? `Indirizzo: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
+    ${cliente.piva? `P.IVA: ${escapeHtml(cliente.piva)}<br>` : ""}
+    ${pv.cantiere_id? `Cantiere: ${escapeHtml(cantiereNome(pv.cantiere_id))}<br>` : ""}
+  </div>
+  ${pv.note? `<p><em>${escapeHtml(pv.note)}</em></p>` : ""}
+  <table>
+    <thead><tr><th>Articolo</th><th>Tipo</th><th style="text-align:right;">Quantità</th><th style="text-align:right;">Prezzo unit.</th><th style="text-align:right;">Sconto</th><th style="text-align:right;">Totale</th></tr></thead>
+    <tbody>${righeHtml}</tbody>
+  </table>
+  ${pv.sconto_percentuale? `<p style="text-align:right;margin-top:10px;">Sconto complessivo: ${pv.sconto_percentuale}%</p>` : ""}
+  <p class="tot">Totale: ${fmtMoney(totalePreventivo(id))}</p>
+  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">Stampa questa pagina</button>
+</body></html>`;
+  const w = window.open("", "_blank");
+  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 function viewPreventivoDettaglio(id){
   const pv = state.data.preventivi.find(p=>p.id===id);
   if(!pv){ state.preventivoAperto=null; return viewPreventivi(); }
@@ -914,7 +968,10 @@ function viewPreventivoDettaglio(id){
   const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
   const soCollegato = state.data.serviceOrders.find(s=>s.preventivo_id===id);
   return `
-    <button class="secondary" id="btn-torna-pv">&larr; Torna all'elenco</button>
+    <div class="actions" style="margin-bottom:0;">
+      <button class="secondary" id="btn-torna-pv">&larr; Torna all'elenco</button>
+      <button class="secondary" id="btn-stampa-pv">🖨️ Stampa / PDF</button>
+    </div>
     <div class="card" style="margin-top:14px;">
       <h2>Preventivo #${pv.numero} <span class="badge ${statoPreventivoLabelClass(pv.stato)}">${statoPreventivoLabel(pv.stato)}</span></h2>
       <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(pv.cliente_id))} &nbsp;
@@ -970,6 +1027,7 @@ function viewPreventivoDettaglio(id){
 }
 function wirePreventivoDettaglio(id){
   document.getElementById("btn-torna-pv").onclick = ()=>{ state.preventivoAperto=null; render(); };
+  document.getElementById("btn-stampa-pv").onclick = ()=>{ stampaPreventivo(id); };
   document.querySelectorAll(".btn-stato-pv").forEach(b=>{
     b.onclick = async ()=>{
       const { error } = await sb.from("preventivi").update({ stato: b.dataset.stato }).eq("id", id);
@@ -1069,3 +1127,4 @@ initAuth();
 </script>
 </body>
 </html>
+
