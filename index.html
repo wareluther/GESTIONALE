@@ -99,6 +99,7 @@ let state = {
   authMode: "login", // login | signup
   soAperto: null, // id service order aperto nel dettaglio
   preventivoAperto: null, // id preventivo aperto nel dettaglio
+  andamentoPeriodo: "rolling12", // rolling12 | annocorrente | annoscorso | confronto
 };
 
 const app = document.getElementById("app");
@@ -414,17 +415,14 @@ function viewDashboard(){
 // ============================================================
 async function viewAndamento(){
   const d = state.data;
-  const fattTotale = d.fatture.filter(f=>f.tipo==="emessa").reduce((s,f)=>s+Number(f.importo_totale),0);
-  const incassato = d.fatture.filter(f=>f.tipo==="emessa" && f.stato==="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
-  const daIncassare = d.fatture.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
-  const costi = d.fatture.filter(f=>f.tipo==="ricevuta").reduce((s,f)=>s+Number(f.importo_totale),0);
-  const utile = fattTotale - costi;
-  const entrateCassa = d.movimenti.filter(m=>m.tipo==="entrata").reduce((s,m)=>s+Number(m.importo),0);
-  const usciteCassa = d.movimenti.filter(m=>m.tipo==="uscita").reduce((s,m)=>s+Number(m.importo),0);
-  const saldoCassa = entrateCassa - usciteCassa;
+  const now = new Date();
+  const annoCorrente = now.getFullYear();
+  const annoScorso = annoCorrente - 1;
+  const periodo = state.andamentoPeriodo || "rolling12";
+
   // Clienti/cantieri/pezzi/service order NON sono più leggibili direttamente
   // dallo shareholder (bloccati a livello di database): i totali arrivano
-  // da una funzione dedicata che calcola solo i numeri aggregati.
+  // da una funzione dedicata che calcola solo i numeri aggregati (sempre "ad oggi").
   let clientiAttivi = 0, cantieriAttivi = 0, soAperti = 0, valMagazzino = 0;
   const { data: kpi, error: kpiErr } = await sb.rpc("andamento_kpi");
   if(!kpiErr && kpi && kpi[0]){
@@ -433,33 +431,86 @@ async function viewAndamento(){
     soAperti = kpi[0].service_order_attivi || 0;
     valMagazzino = Number(kpi[0].valore_magazzino) || 0;
   }
-  // Serie mensili (ultimi 12 mesi) per i grafici di andamento -----------------
-  const mesi = ultimiMesi(12);
-  const fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
-  const entrateMensili = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)));
-  const usciteMensili = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
+
+  // Totali economici in base al periodo selezionato -----------------------
+  let fatturePeriodo = d.fatture, movimentiPeriodo = d.movimenti, etichettaPeriodo = "Da sempre";
+  if(periodo==="annocorrente"){
+    fatturePeriodo = filtraAnno(d.fatture, "data_emissione", annoCorrente);
+    movimentiPeriodo = filtraAnno(d.movimenti, "data", annoCorrente);
+    etichettaPeriodo = "Anno "+annoCorrente;
+  } else if(periodo==="annoscorso"){
+    fatturePeriodo = filtraAnno(d.fatture, "data_emissione", annoScorso);
+    movimentiPeriodo = filtraAnno(d.movimenti, "data", annoScorso);
+    etichettaPeriodo = "Anno "+annoScorso;
+  } else if(periodo==="confronto"){
+    fatturePeriodo = filtraAnno(d.fatture, "data_emissione", annoCorrente);
+    movimentiPeriodo = filtraAnno(d.movimenti, "data", annoCorrente);
+    etichettaPeriodo = "Anno "+annoCorrente+" (confronto con "+annoScorso+" nei grafici)";
+  }
+  const fin = calcolaFinanziari(fatturePeriodo, movimentiPeriodo);
+
+  // Serie mensili per i grafici, in base al periodo ------------------------
+  const mesiBrevi = [...Array(12).keys()].map(m=>new Date(2000,m,1).toLocaleDateString("it-IT",{month:"short"}));
+  let mesiLabels, fatturatoMensile, saldoMensile, fatturatoMensileB=null, saldoMensileB=null, legendaAnnoA=null, legendaAnnoB=null;
+  if(periodo==="annocorrente"){
+    const mesi = mesiDiAnno(annoCorrente, now.getMonth());
+    mesiLabels = mesi.map(m=>m.label);
+    fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
+    saldoMensile = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
+  } else if(periodo==="annoscorso"){
+    const mesi = mesiDiAnno(annoScorso, 11);
+    mesiLabels = mesi.map(m=>m.label);
+    fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
+    saldoMensile = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
+  } else if(periodo==="confronto"){
+    mesiLabels = mesiBrevi;
+    legendaAnnoA = "Anno "+annoScorso; legendaAnnoB = "Anno "+annoCorrente;
+    fatturatoMensile = mesiBrevi.map((_,m)=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===(annoScorso+"-"+String(m+1).padStart(2,"0")), f=>Number(f.importo_totale)));
+    fatturatoMensileB = mesiBrevi.map((_,m)=> m<=now.getMonth()? somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===(annoCorrente+"-"+String(m+1).padStart(2,"0")), f=>Number(f.importo_totale)) : null);
+    saldoMensile = mesiBrevi.map((_,m)=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===(annoScorso+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===(annoScorso+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo)));
+    saldoMensileB = mesiBrevi.map((_,m)=> m<=now.getMonth()? (somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===(annoCorrente+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===(annoCorrente+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo))) : null);
+  } else { // rolling12 (Da sempre)
+    const mesi = ultimiMesi(12);
+    mesiLabels = mesi.map(m=>m.label);
+    fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
+    saldoMensile = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
+  }
+
+  // Confronto anni per i grafici a barre in alto ---------------------------
+  let confrontoBarre = null;
+  if(periodo==="confronto"){
+    const finA = calcolaFinanziari(filtraAnno(d.fatture,"data_emissione",annoScorso), filtraAnno(d.movimenti,"data",annoScorso));
+    const finB = calcolaFinanziari(filtraAnno(d.fatture,"data_emissione",annoCorrente), filtraAnno(d.movimenti,"data",annoCorrente));
+    confrontoBarre = { annoA: annoScorso, annoB: annoCorrente, finA, finB };
+  }
+
   state._andamentoCharts = {
-    fattCostiUtile: { labels: ["Fatturato","Costi","Utile"], valori: [fattTotale, costi, utile] },
-    incassatoVsDaIncassare: { labels: ["Incassato","Da incassare"], valori: [incassato, daIncassare] },
-    mesiLabels: mesi.map(m=>m.label),
-    fatturatoMensile, entrateMensili, usciteMensili,
+    periodo, fin, confrontoBarre,
+    mesiLabels, fatturatoMensile, saldoMensile, fatturatoMensileB, saldoMensileB, legendaAnnoA, legendaAnnoB,
   };
   return `
     <div class="card">
       <h2>Andamento dell'azienda</h2>
       <p><small class="hint">Vista di sola lettura riservata a soci/azionisti e amministratore: solo dati e totali aggregati, nessun dettaglio su singoli clienti/cantieri.</small></p>
+      <div class="pill-select" id="filtro-periodo-andamento">
+        <button data-p="rolling12" class="${periodo==="rolling12"?"active":""}">Da sempre</button>
+        <button data-p="annocorrente" class="${periodo==="annocorrente"?"active":""}">Anno corrente (${annoCorrente})</button>
+        <button data-p="annoscorso" class="${periodo==="annoscorso"?"active":""}">Anno scorso (${annoScorso})</button>
+        <button data-p="confronto" class="${periodo==="confronto"?"active":""}">Confronta ${annoScorso} vs ${annoCorrente}</button>
+      </div>
+      <p><small class="hint">Periodo selezionato: ${escapeHtml(etichettaPeriodo)}. I dati di clienti/cantieri/service order attivi e il valore di magazzino sono sempre riferiti ad oggi.</small></p>
     </div>
     <div class="kpi-grid">
-      <div class="kpi"><div class="num">${fmtMoney(fattTotale)}</div><div class="lbl">Fatturato totale</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(incassato)}</div><div class="lbl">Incassato</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(daIncassare)}</div><div class="lbl">Da incassare</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(costi)}</div><div class="lbl">Costi (fatture da fornitori)</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(utile)}</div><div class="lbl">Utile stimato</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(saldoCassa)}</div><div class="lbl">Saldo cassa/banca</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(valMagazzino)}</div><div class="lbl">Valore magazzino (a listino)</div></div>
-      <div class="kpi"><div class="num">${clientiAttivi}</div><div class="lbl">Clienti attivi</div></div>
-      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
-      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.fatturato)}</div><div class="lbl">Fatturato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.incassato)}</div><div class="lbl">Incassato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.daIncassare)}</div><div class="lbl">Da incassare</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.costi)}</div><div class="lbl">Costi (fatture da fornitori)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.utile)}</div><div class="lbl">Utile stimato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.saldo)}</div><div class="lbl">Saldo cassa/banca (periodo)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valMagazzino)}</div><div class="lbl">Valore magazzino (a listino, ad oggi)</div></div>
+      <div class="kpi"><div class="num">${clientiAttivi}</div><div class="lbl">Clienti attivi (ad oggi)</div></div>
+      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi (ad oggi)</div></div>
+      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi (ad oggi)</div></div>
     </div>
     <div class="charts-grid">
       <div class="card">
@@ -471,17 +522,17 @@ async function viewAndamento(){
         <div class="chart-wrap"><canvas id="chart-incassato"></canvas></div>
       </div>
       <div class="card" style="grid-column:1 / -1;">
-        <h2>Fatturato mensile (ultimi 12 mesi)</h2>
+        <h2>Andamento mensile del fatturato</h2>
         <div class="chart-wrap"><canvas id="chart-fatturato-mensile"></canvas></div>
       </div>
       <div class="card" style="grid-column:1 / -1;">
-        <h2>Entrate e uscite di cassa (ultimi 12 mesi)</h2>
+        <h2>Saldo netto di cassa (entrate − uscite) per mese</h2>
         <div class="chart-wrap"><canvas id="chart-cassa-mensile"></canvas></div>
       </div>
     </div>
   `;
 }
-// Helper per le serie mensili: ultimi n mesi (compreso quello corrente)
+// Helper date/aggregazioni per la pagina Andamento --------------------------
 function ultimiMesi(n){
   const out = [];
   const now = new Date();
@@ -491,8 +542,24 @@ function ultimiMesi(n){
   }
   return out;
 }
+function mesiDiAnno(anno, finoAMeseIndice){
+  const out = [];
+  for(let m=0;m<=finoAMeseIndice;m++){
+    out.push({ key: anno+"-"+String(m+1).padStart(2,"0"), label: new Date(anno,m,1).toLocaleDateString("it-IT",{month:"short"}) });
+  }
+  return out;
+}
 function meseDi(dataStr){ return dataStr? String(dataStr).slice(0,7) : null; }
 function somma(rows, filtro, valore){ return rows.filter(filtro).reduce((s,r)=>s+valore(r),0); }
+function filtraAnno(rows, campoData, anno){ return rows.filter(r=>r[campoData] && new Date(r[campoData]).getFullYear()===anno); }
+function calcolaFinanziari(fatture, movimenti){
+  const fatturato = somma(fatture, f=>f.tipo==="emessa", f=>Number(f.importo_totale));
+  const incassato = somma(fatture, f=>f.tipo==="emessa" && f.stato==="pagata", f=>Number(f.importo_totale));
+  const costi = somma(fatture, f=>f.tipo==="ricevuta", f=>Number(f.importo_totale));
+  const entrate = somma(movimenti, m=>m.tipo==="entrata", m=>Number(m.importo));
+  const uscite = somma(movimenti, m=>m.tipo==="uscita", m=>Number(m.importo));
+  return { fatturato, incassato, daIncassare: fatturato-incassato, costi, utile: fatturato-costi, entrate, uscite, saldo: entrate-uscite };
+}
 
 // Palette validata (categorica, ordine fisso): blu, arancio, verde acqua
 const COLORE_BLU = "#2a78d6", COLORE_ARANCIO = "#eb6834", COLORE_AQUA = "#1baf7a";
@@ -504,30 +571,63 @@ function disegnaGrafico(id, config){
   _chartInstances[id] = new Chart(canvas.getContext("2d"), config);
 }
 function wireAndamento(){
+  document.querySelectorAll("#filtro-periodo-andamento button").forEach(b=>{
+    b.onclick = ()=>{ state.andamentoPeriodo = b.dataset.p; render(); };
+  });
   const c = state._andamentoCharts;
   if(!c) return;
-  disegnaGrafico("chart-fattcostiutile", {
-    type: "bar",
-    data: { labels: c.fattCostiUtile.labels, datasets: [{ label:"Importo (€)", data: c.fattCostiUtile.valori, backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
-    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
-  });
-  disegnaGrafico("chart-incassato", {
-    type: "doughnut",
-    data: { labels: c.incassatoVsDaIncassare.labels, datasets: [{ data: c.incassatoVsDaIncassare.valori, backgroundColor:[COLORE_BLU,COLORE_ARANCIO] }] },
-    options: { plugins:{ legend:{ position:"bottom" }, tooltip:{ callbacks:{ label:(ctx)=>ctx.label+": "+fmtMoney(ctx.raw) } } } }
-  });
+  const confronto = c.periodo==="confronto";
+
+  if(confronto && c.confrontoBarre){
+    const { annoA, annoB, finA, finB } = c.confrontoBarre;
+    disegnaGrafico("chart-fattcostiutile", {
+      type: "bar",
+      data: { labels: ["Fatturato","Costi","Utile"], datasets: [
+        { label:"Anno "+annoA, data:[finA.fatturato,finA.costi,finA.utile], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
+        { label:"Anno "+annoB, data:[finB.fatturato,finB.costi,finB.utile], backgroundColor: COLORE_BLU, borderRadius:4 },
+      ]},
+      options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    });
+    disegnaGrafico("chart-incassato", {
+      type: "bar",
+      data: { labels: ["Incassato","Da incassare"], datasets: [
+        { label:"Anno "+annoA, data:[finA.incassato,finA.daIncassare], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
+        { label:"Anno "+annoB, data:[finB.incassato,finB.daIncassare], backgroundColor: COLORE_BLU, borderRadius:4 },
+      ]},
+      options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    });
+  } else {
+    disegnaGrafico("chart-fattcostiutile", {
+      type: "bar",
+      data: { labels: ["Fatturato","Costi","Utile"], datasets: [{ label:"Importo (€)", data: [c.fin.fatturato,c.fin.costi,c.fin.utile], backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
+      options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    });
+    disegnaGrafico("chart-incassato", {
+      type: "doughnut",
+      data: { labels: ["Incassato","Da incassare"], datasets: [{ data: [c.fin.incassato,c.fin.daIncassare], backgroundColor:[COLORE_BLU,COLORE_ARANCIO] }] },
+      options: { plugins:{ legend:{ position:"bottom" }, tooltip:{ callbacks:{ label:(ctx)=>ctx.label+": "+fmtMoney(ctx.raw) } } } }
+    });
+  }
+
   disegnaGrafico("chart-fatturato-mensile", {
     type: "line",
-    data: { labels: c.mesiLabels, datasets: [{ label:"Fatturato", data: c.fatturatoMensile, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false }] },
-    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    data: { labels: c.mesiLabels, datasets: confronto? [
+      { label: c.legendaAnnoA, data: c.fatturatoMensile, borderColor: COLORE_ARANCIO, backgroundColor: COLORE_ARANCIO, tension:0.25, fill:false },
+      { label: c.legendaAnnoB, data: c.fatturatoMensileB, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false },
+    ] : [
+      { label:"Fatturato", data: c.fatturatoMensile, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false },
+    ]},
+    options: { plugins:{ legend:{ display: confronto } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
   disegnaGrafico("chart-cassa-mensile", {
     type: "bar",
-    data: { labels: c.mesiLabels, datasets: [
-      { label:"Entrate", data: c.entrateMensili, backgroundColor: COLORE_BLU },
-      { label:"Uscite", data: c.usciteMensili, backgroundColor: COLORE_ARANCIO },
+    data: { labels: c.mesiLabels, datasets: confronto? [
+      { label: c.legendaAnnoA, data: c.saldoMensile, backgroundColor: COLORE_ARANCIO },
+      { label: c.legendaAnnoB, data: c.saldoMensileB, backgroundColor: COLORE_BLU },
+    ] : [
+      { label:"Saldo netto", data: c.saldoMensile, backgroundColor: COLORE_BLU },
     ]},
-    options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ ticks:{ callback:v=>fmtMoney(v) } } } }
   });
 }
 
