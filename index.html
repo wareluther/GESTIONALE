@@ -1291,13 +1291,17 @@ function wirePezzi(){
 function editPezzo(id){
   const p = state.data.pezzi.find(x=>x.id===id);
   if(!p) return;
+  const soloAdmin = myRole()==="admin";
   const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}" ${a.id===p.articolo_id?"selected":""}>${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
   const stati = ["disponibile","in_uso","in_revisione","da_riparare","danneggiato","fuori_servizio"];
   const body = `
     <form id="form-edit-pezzo">
       <div class="form-grid">
         <div><label>Articolo *</label><select required id="ep-articolo">${articoliOpts}</select></div>
-        <div><label>DTR (codice univoco) *</label><input required id="ep-dtr" value="${escapeHtml(p.dtr)}"></div>
+        <div><label>DTR (codice univoco) *</label>
+          <input required id="ep-dtr" value="${escapeHtml(p.dtr)}" ${soloAdmin? "" : "readonly disabled"}>
+          ${soloAdmin? "" : `<small class="hint">Solo l'amministratore può modificare il codice DTR.</small>`}
+        </div>
         <div><label>Posizione in magazzino</label><input id="ep-posizione" value="${escapeHtml(p.posizione||"")}"></div>
         <div><label>Stato</label><select id="ep-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
       </div>
@@ -1316,11 +1320,11 @@ function editPezzo(id){
       e.preventDefault();
       const payload = {
         articolo_id: bodyEl.querySelector("#ep-articolo").value,
-        dtr: bodyEl.querySelector("#ep-dtr").value.trim(),
         posizione: bodyEl.querySelector("#ep-posizione").value.trim() || null,
         stato: bodyEl.querySelector("#ep-stato").value,
         updated_at: new Date().toISOString(),
       };
+      if(soloAdmin) payload.dtr = bodyEl.querySelector("#ep-dtr").value.trim();
       const { error } = await sb.from("pezzi").update(payload).eq("id", id);
       if(error){ alert("Errore: "+error.message); return; }
       closeModal();
@@ -1423,6 +1427,8 @@ function viewServiceOrderDettaglio(id){
       ${so.note? `<p><em>${escapeHtml(so.note)}</em></p>` : ""}
       <div class="actions">
         ${so.stato!=="chiuso" && so.stato!=="annullato" ? `<button class="secondary" id="btn-chiudi-so">Chiudi Service Order</button>` : ""}
+        ${so.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-so">Riapri Service Order</button>` : ""}
+        ${so.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">Solo l'amministratore può riaprire un Service Order chiuso.</small>` : ""}
         ${myRole()==="admin"? `<button class="danger" id="btn-elimina-so">Elimina Service Order</button>` : ""}
       </div>
     </div>
@@ -1505,6 +1511,13 @@ function wireServiceOrderDettaglio(id){
   const btnChiudi = document.getElementById("btn-chiudi-so");
   if(btnChiudi) btnChiudi.onclick = async ()=>{
     const { error } = await sb.from("service_orders").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnRiapri = document.getElementById("btn-riapri-so");
+  if(btnRiapri) btnRiapri.onclick = async ()=>{
+    if(!confirm("Riaprire questo Service Order?")) return;
+    const { error } = await sb.from("service_orders").update({ stato:"aperto", data_chiusura: null }).eq("id", id);
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
