@@ -290,7 +290,7 @@ async function render(){
   if(state.view==="fatture") { main.innerHTML = viewFatture(); wireFatture(); }
   if(state.view==="cassa") { main.innerHTML = viewCassa(); wireCassa(); }
   if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
-  if(state.view==="andamento") { main.innerHTML = viewAndamento(); wireAndamento(); }
+  if(state.view==="andamento") { main.innerHTML = await viewAndamento(); wireAndamento(); }
 }
 
 function navBtn(view, label){
@@ -408,7 +408,7 @@ function viewDashboard(){
 // ============================================================
 // ANDAMENTO AZIENDA (dashboard per gli shareholder/soci)
 // ============================================================
-function viewAndamento(){
+async function viewAndamento(){
   const d = state.data;
   const fattTotale = d.fatture.filter(f=>f.tipo==="emessa").reduce((s,f)=>s+Number(f.importo_totale),0);
   const incassato = d.fatture.filter(f=>f.tipo==="emessa" && f.stato==="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
@@ -418,13 +418,21 @@ function viewAndamento(){
   const entrateCassa = d.movimenti.filter(m=>m.tipo==="entrata").reduce((s,m)=>s+Number(m.importo),0);
   const usciteCassa = d.movimenti.filter(m=>m.tipo==="uscita").reduce((s,m)=>s+Number(m.importo),0);
   const saldoCassa = entrateCassa - usciteCassa;
-  const clientiAttivi = d.clienti.filter(c=>d.cantieri.some(k=>k.cliente_id===c.id && k.stato==="attivo")).length;
-  const cantieriAttivi = d.cantieri.filter(c=>c.stato==="attivo").length;
-  const soAperti = d.serviceOrders.filter(s=>s.stato==="aperto"||s.stato==="in_corso").length;
+  // Clienti/cantieri/pezzi/service order NON sono più leggibili direttamente
+  // dallo shareholder (bloccati a livello di database): i totali arrivano
+  // da una funzione dedicata che calcola solo i numeri aggregati.
+  let clientiAttivi = 0, cantieriAttivi = 0, soAperti = 0, valMagazzino = 0;
+  const { data: kpi, error: kpiErr } = await sb.rpc("andamento_kpi");
+  if(!kpiErr && kpi && kpi[0]){
+    clientiAttivi = kpi[0].clienti_attivi || 0;
+    cantieriAttivi = kpi[0].cantieri_attivi || 0;
+    soAperti = kpi[0].service_order_attivi || 0;
+    valMagazzino = Number(kpi[0].valore_magazzino) || 0;
+  }
   return `
     <div class="card">
       <h2>Andamento dell'azienda</h2>
-      <p><small class="hint">Vista di sola lettura riservata a soci/azionisti e amministratore: dati economici e operativi aggregati.</small></p>
+      <p><small class="hint">Vista di sola lettura riservata a soci/azionisti e amministratore: solo dati e totali aggregati, nessun dettaglio su singoli clienti/cantieri.</small></p>
     </div>
     <div class="kpi-grid">
       <div class="kpi"><div class="num">${fmtMoney(fattTotale)}</div><div class="lbl">Fatturato totale</div></div>
@@ -433,7 +441,7 @@ function viewAndamento(){
       <div class="kpi"><div class="num">${fmtMoney(costi)}</div><div class="lbl">Costi (fatture da fornitori)</div></div>
       <div class="kpi"><div class="num">${fmtMoney(utile)}</div><div class="lbl">Utile stimato</div></div>
       <div class="kpi"><div class="num">${fmtMoney(saldoCassa)}</div><div class="lbl">Saldo cassa/banca</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(valoreMagazzino())}</div><div class="lbl">Valore magazzino (a listino)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valMagazzino)}</div><div class="lbl">Valore magazzino (a listino)</div></div>
       <div class="kpi"><div class="num">${clientiAttivi}</div><div class="lbl">Clienti attivi</div></div>
       <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
       <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
