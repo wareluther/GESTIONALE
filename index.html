@@ -91,7 +91,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
   session: null,
   view: "dashboard",
-  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [] },
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [] },
   authMode: "login", // login | signup
   soAperto: null, // id service order aperto nel dettaglio
   preventivoAperto: null, // id preventivo aperto nel dettaglio
@@ -143,7 +143,7 @@ async function handleLogout(){
 // CARICAMENTO DATI
 // ============================================================
 async function loadAll(){
-  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe] = await Promise.all([
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti] = await Promise.all([
     sb.from("clienti").select("*").order("created_at",{ascending:false}),
     sb.from("cantieri").select("*").order("created_at",{ascending:false}),
     sb.from("articoli").select("*").order("created_at",{ascending:false}),
@@ -154,6 +154,9 @@ async function loadAll(){
     sb.from("listino_prezzi").select("*"),
     sb.from("preventivi").select("*").order("data_creazione",{ascending:false}),
     sb.from("preventivo_righe").select("*"),
+    sb.from("fornitori").select("*").order("created_at",{ascending:false}),
+    sb.from("fatture").select("*").order("data_emissione",{ascending:false}),
+    sb.from("movimenti_cassa").select("*").order("data",{ascending:false}),
   ]);
   state.data.clienti = clienti.data || [];
   state.data.cantieri = cantieri.data || [];
@@ -165,6 +168,9 @@ async function loadAll(){
   state.data.listino = listino.data || [];
   state.data.preventivi = preventivi.data || [];
   state.data.preventivoRighe = preventivoRighe.data || [];
+  state.data.fornitori = fornitori.data || [];
+  state.data.fatture = fatture.data || [];
+  state.data.movimenti = movimenti.data || [];
 }
 
 function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
@@ -187,6 +193,12 @@ function totalePreventivo(preventivoId){
 }
 function statoPreventivoLabelClass(s){ const map={bozza:"in_revisione",inviato:"in_uso",accettato:"chiuso",rifiutato:"danneggiato"}; return map[s]||s; }
 function statoPreventivoLabel(s){ const map={bozza:"Bozza",inviato:"Inviato",accettato:"Accettato",rifiutato:"Rifiutato"}; return map[s]||s; }
+function fornitoreNome(id){ const f = state.data.fornitori.find(x=>x.id===id); return f ? f.ragione_sociale : "-"; }
+function isScaduta(f){ return f.stato==="non_pagata" && f.data_scadenza && new Date(f.data_scadenza) < new Date(new Date().toDateString()); }
+function statoFatturaEffettivo(f){ return isScaduta(f) ? "scaduta" : f.stato; }
+function statoFatturaLabel(s){ const map={non_pagata:"Non pagata",pagata:"Pagata",insoluto:"Insoluto",scaduta:"Scaduta"}; return map[s]||s; }
+function statoFatturaClass(s){ const map={non_pagata:"in_uso",pagata:"chiuso",insoluto:"danneggiato",scaduta:"da_riparare"}; return map[s]||s; }
+function fmtDateOnly(d){ if(!d) return "-"; return new Date(d).toLocaleDateString("it-IT"); }
 
 // ============================================================
 // RENDER PRINCIPALE
@@ -200,6 +212,7 @@ async function render(){
   const ruolo = myRole();
   const vedeMagazzino = ruolo!=="contabile"; // contabile non vede magazzino/pezzi/service order
   const vedePrezzi = ruolo!=="magazzino"; // il magazzino non vede prezzi/listino/preventivi
+  const vedeContabilita = ["contabile","admin"].includes(ruolo);
   const navItems = [["dashboard","Dashboard",true],
     ["clienti","Clienti",true],
     ["cantieri","Cantieri",true],
@@ -208,6 +221,9 @@ async function render(){
     ["listino","Listino prezzi",vedePrezzi],
     ["preventivi","Preventivi",vedePrezzi],
     ["serviceorder","Service Order",vedeMagazzino],
+    ["fornitori","Fornitori",vedeContabilita],
+    ["fatture","Fatture",vedeContabilita],
+    ["cassa","Cassa",vedeContabilita],
     ["utenti","Utenti",ruolo==="admin"]];
   if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = "dashboard";
 
@@ -236,6 +252,9 @@ async function render(){
   if(state.view==="listino") { main.innerHTML = viewListino(); wireListino(); }
   if(state.view==="preventivi") { main.innerHTML = viewPreventivi(); wirePreventivi(); }
   if(state.view==="serviceorder") { main.innerHTML = viewServiceOrder(); wireServiceOrder(); }
+  if(state.view==="fornitori") { main.innerHTML = viewFornitori(); wireFornitori(); }
+  if(state.view==="fatture") { main.innerHTML = viewFatture(); wireFatture(); }
+  if(state.view==="cassa") { main.innerHTML = viewCassa(); wireCassa(); }
   if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
 }
 
@@ -304,10 +323,14 @@ function renderLogin(){
 // ============================================================
 function viewDashboard(){
   const d = state.data;
+  const ruolo = myRole();
   const soAperti = d.serviceOrders.filter(s=>s.stato==="aperto"||s.stato==="in_corso").length;
   const fuoriMagazzino = d.pezzi.filter(p=>p.stato==="in_uso").length;
   const daRevisionare = d.pezzi.filter(p=>p.stato==="in_revisione"||p.stato==="da_riparare").length;
   const cantieriAttivi = d.cantieri.filter(c=>c.stato==="attivo").length;
+  const vedeContabilita = ["contabile","admin"].includes(ruolo);
+  const daIncassare = d.fatture.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const scadute = d.fatture.filter(f=>f.tipo==="emessa" && isScaduta(f)).length;
   return `
     <div class="kpi-grid">
       <div class="kpi"><div class="num">${d.clienti.length}</div><div class="lbl">Clienti</div></div>
@@ -317,6 +340,9 @@ function viewDashboard(){
       <div class="kpi"><div class="num">${fuoriMagazzino}</div><div class="lbl">Pezzi fuori magazzino</div></div>
       <div class="kpi"><div class="num">${daRevisionare}</div><div class="lbl">Da revisionare/riparare</div></div>
       <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
+      ${vedeContabilita? `
+      <div class="kpi"><div class="num">${fmtMoney(daIncassare)}</div><div class="lbl">Da incassare</div></div>
+      <div class="kpi"><div class="num">${scadute}</div><div class="lbl">Fatture scadute</div></div>` : ""}
     </div>
     <div class="card" style="margin-top:18px;">
       <h2>Ultimi Service Order</h2>
@@ -1092,6 +1118,241 @@ function wirePreventivoDettaglio(id){
       render();
     };
   });
+}
+
+// ============================================================
+// FORNITORI
+// ============================================================
+function viewFornitori(){
+  const rows = state.data.fornitori;
+  return `
+    <div class="card">
+      <h2>Nuovo fornitore</h2>
+      <form id="form-fornitore">
+        <div class="form-grid">
+          <div><label>Ragione sociale *</label><input required id="f-ragione"></div>
+          <div><label>Referente</label><input id="f-referente"></div>
+          <div><label>Telefono</label><input id="f-telefono"></div>
+          <div><label>Email</label><input type="email" id="f-email"></div>
+          <div><label>Indirizzo</label><input id="f-indirizzo"></div>
+          <div><label>Partita IVA</label><input id="f-piva"></div>
+        </div>
+        <label>Note</label><textarea id="f-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva fornitore</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Elenco fornitori (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun fornitore inserito.</div>` : `
+      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th></tr></thead>
+      <tbody>
+        ${rows.map(f=>`
+          <tr>
+            <td>${escapeHtml(f.ragione_sociale)}</td>
+            <td>${escapeHtml(f.referente||"-")}</td>
+            <td>${escapeHtml(f.telefono||"-")}</td>
+            <td>${escapeHtml(f.email||"-")}</td>
+            <td>${escapeHtml(f.piva||"-")}</td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireFornitori(){
+  const f = document.getElementById("form-fornitore");
+  if(!f) return;
+  f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      ragione_sociale: document.getElementById("f-ragione").value.trim(),
+      referente: document.getElementById("f-referente").value.trim() || null,
+      telefono: document.getElementById("f-telefono").value.trim() || null,
+      email: document.getElementById("f-email").value.trim() || null,
+      indirizzo: document.getElementById("f-indirizzo").value.trim() || null,
+      piva: document.getElementById("f-piva").value.trim() || null,
+      note: document.getElementById("f-note").value.trim() || null,
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("fornitori").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+}
+
+// ============================================================
+// FATTURE
+// ============================================================
+function viewFatture(){
+  const rows = state.data.fatture;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  const fornitoriOpts = state.data.fornitori.map(f=>`<option value="${f.id}">${escapeHtml(f.ragione_sociale)}</option>`).join("");
+  const soOpts = state.data.serviceOrders.map(s=>`<option value="${s.id}">#${s.numero} - ${escapeHtml(clienteNome(s.cliente_id))}</option>`).join("");
+  const totIncassare = rows.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const totScadute = rows.filter(f=>f.tipo==="emessa" && isScaduta(f)).reduce((s,f)=>s+Number(f.importo_totale),0);
+  const totDaPagare = rows.filter(f=>f.tipo==="ricevuta" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(totIncassare)}</div><div class="lbl">Da incassare (clienti)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totScadute)}</div><div class="lbl">Scadute (clienti)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totDaPagare)}</div><div class="lbl">Da pagare (fornitori)</div></div>
+    </div>
+    <div class="card">
+      <h2>Nuova fattura</h2>
+      <form id="form-fattura">
+        <div class="form-grid">
+          <div><label>Tipo *</label>
+            <select required id="ft-tipo">
+              <option value="emessa">Emessa (a un cliente)</option>
+              <option value="ricevuta">Ricevuta (da un fornitore)</option>
+            </select>
+          </div>
+          <div id="ft-cliente-wrap"><label>Cliente *</label><select id="ft-cliente">${clientiOpts}</select></div>
+          <div id="ft-fornitore-wrap" style="display:none;"><label>Fornitore *</label><select id="ft-fornitore">${fornitoriOpts}</select></div>
+          <div><label>Service Order collegato</label><select id="ft-so"><option value="">-- nessuno --</option>${soOpts}</select></div>
+          <div><label>Data emissione</label><input type="date" id="ft-emissione" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div><label>Data scadenza</label><input type="date" id="ft-scadenza"></div>
+          <div><label>Imponibile (€) *</label><input type="number" step="0.01" required id="ft-imponibile"></div>
+          <div><label>IVA %</label><input type="number" step="0.01" id="ft-iva" value="22"></div>
+        </div>
+        <label>Note</label><textarea id="ft-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva fattura</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Elenco fatture (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessuna fattura inserita.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Tipo</th><th>Cliente/Fornitore</th><th>Emissione</th><th>Scadenza</th><th>Totale</th><th>Stato</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(f=>{
+          const stEff = statoFatturaEffettivo(f);
+          return `<tr>
+            <td>#${f.numero}</td>
+            <td>${f.tipo==="emessa"?"Emessa":"Ricevuta"}</td>
+            <td>${f.tipo==="emessa"? escapeHtml(clienteNome(f.cliente_id)) : escapeHtml(fornitoreNome(f.fornitore_id))}</td>
+            <td>${fmtDateOnly(f.data_emissione)}</td>
+            <td>${fmtDateOnly(f.data_scadenza)}</td>
+            <td>${fmtMoney(f.importo_totale)}</td>
+            <td><span class="badge ${statoFatturaClass(stEff)}">${statoFatturaLabel(stEff)}</span></td>
+            <td>
+              ${f.stato!=="pagata"? `<button class="secondary btn-segna-pagata" data-id="${f.id}">Segna pagata</button>` : ""}
+              ${f.stato==="non_pagata"? `<button class="secondary btn-segna-insoluto" data-id="${f.id}">Insoluto</button>` : ""}
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireFatture(){
+  const selTipo = document.getElementById("ft-tipo");
+  const wrapCliente = document.getElementById("ft-cliente-wrap");
+  const wrapFornitore = document.getElementById("ft-fornitore-wrap");
+  function aggiornaTipo(){
+    const isEmessa = selTipo.value === "emessa";
+    wrapCliente.style.display = isEmessa? "" : "none";
+    wrapFornitore.style.display = isEmessa? "none" : "";
+  }
+  if(selTipo){ aggiornaTipo(); selTipo.onchange = aggiornaTipo; }
+  const f = document.getElementById("form-fattura");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const isEmessa = selTipo.value === "emessa";
+    const payload = {
+      tipo: selTipo.value,
+      cliente_id: isEmessa? document.getElementById("ft-cliente").value : null,
+      fornitore_id: !isEmessa? document.getElementById("ft-fornitore").value : null,
+      service_order_id: document.getElementById("ft-so").value || null,
+      data_emissione: document.getElementById("ft-emissione").value || new Date().toISOString().slice(0,10),
+      data_scadenza: document.getElementById("ft-scadenza").value || null,
+      importo_imponibile: parseFloat(document.getElementById("ft-imponibile").value) || 0,
+      iva_percentuale: parseFloat(document.getElementById("ft-iva").value) || 0,
+      note: document.getElementById("ft-note").value.trim() || null,
+      stato: "non_pagata",
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("fatture").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-segna-pagata").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("fatture").update({ stato:"pagata" }).eq("id", b.dataset.id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+  document.querySelectorAll(".btn-segna-insoluto").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("fatture").update({ stato:"insoluto" }).eq("id", b.dataset.id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+}
+
+// ============================================================
+// CASSA / BANCA
+// ============================================================
+function viewCassa(){
+  const rows = state.data.movimenti;
+  const entrate = rows.filter(m=>m.tipo==="entrata").reduce((s,m)=>s+Number(m.importo),0);
+  const uscite = rows.filter(m=>m.tipo==="uscita").reduce((s,m)=>s+Number(m.importo),0);
+  const saldo = entrate - uscite;
+  return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(entrate)}</div><div class="lbl">Totale entrate</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(uscite)}</div><div class="lbl">Totale uscite</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(saldo)}</div><div class="lbl">Saldo</div></div>
+    </div>
+    <div class="card">
+      <h2>Nuovo movimento</h2>
+      <form id="form-movimento">
+        <div class="form-grid">
+          <div><label>Tipo *</label><select required id="mv-tipo"><option value="entrata">Entrata</option><option value="uscita">Uscita</option></select></div>
+          <div><label>Metodo</label><select id="mv-metodo"><option value="banca">Banca</option><option value="cassa">Cassa</option></select></div>
+          <div><label>Importo (€) *</label><input type="number" step="0.01" required id="mv-importo"></div>
+          <div><label>Data</label><input type="date" id="mv-data" value="${new Date().toISOString().slice(0,10)}"></div>
+        </div>
+        <label>Descrizione</label><textarea id="mv-descrizione"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Registra movimento</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Movimenti (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
+      <table><thead><tr><th>Data</th><th>Tipo</th><th>Metodo</th><th>Importo</th><th>Descrizione</th></tr></thead>
+      <tbody>
+        ${rows.map(m=>`
+          <tr>
+            <td>${fmtDateOnly(m.data)}</td>
+            <td><span class="badge ${m.tipo==='entrata'?'disponibile':'danneggiato'}">${m.tipo==='entrata'?'Entrata':'Uscita'}</span></td>
+            <td>${m.metodo==='banca'?'Banca':'Cassa'}</td>
+            <td>${fmtMoney(m.importo)}</td>
+            <td>${escapeHtml(m.descrizione||"-")}</td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireCassa(){
+  const f = document.getElementById("form-movimento");
+  if(!f) return;
+  f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      tipo: document.getElementById("mv-tipo").value,
+      metodo: document.getElementById("mv-metodo").value,
+      importo: parseFloat(document.getElementById("mv-importo").value) || 0,
+      data: document.getElementById("mv-data").value || new Date().toISOString().slice(0,10),
+      descrizione: document.getElementById("mv-descrizione").value.trim() || null,
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("movimenti_cassa").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
 }
 
 // ============================================================
