@@ -95,7 +95,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
   session: null,
   view: "dashboard",
-  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [], documenti: [] },
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [], documenti: [], attivitaCrm: [], commentiSO: [], messaggiInterni: [], notificheEventi: [], notificheLette: [] },
   authMode: "login", // login | signup
   soAperto: null, // id service order aperto nel dettaglio
   preventivoAperto: null, // id preventivo aperto nel dettaglio
@@ -146,6 +146,43 @@ async function confirmDelete(table, id, labelCosa, afterOk){
 }
 
 // ============================================================
+// NOTIFICHE (eventi generati automaticamente sul cambio di stato)
+// ============================================================
+function apriNotifiche(){
+  const eventi = state.data.notificheEventi;
+  const lette = new Set(state.data.notificheLette.map(l=>l.evento_id));
+  const body = `
+    <table><thead><tr><th>Evento</th><th>Quando</th><th></th></tr></thead>
+    <tbody>
+      ${eventi.length===0? `<tr><td colspan="3" class="empty">Nessuna notifica.</td></tr>` : eventi.map(ev=>`
+        <tr style="${lette.has(ev.id)?'':'font-weight:600;'}">
+          <td>${escapeHtml(ev.messaggio)}</td>
+          <td>${fmtDate(ev.created_at)}</td>
+          <td>${!lette.has(ev.id)? `<button class="secondary btn-segna-letta" data-id="${ev.id}">Segna come letta</button>` : "✓"}</td>
+        </tr>
+      `).join("")}
+    </tbody></table>
+    ${eventi.some(ev=>!lette.has(ev.id))? `<div class="actions" style="margin-top:14px;"><button id="btn-segna-tutte-lette">Segna tutte come lette</button></div>` : ""}
+  `;
+  openModal("Notifiche", body, (bodyEl)=>{
+    bodyEl.querySelectorAll(".btn-segna-letta").forEach(b=>{
+      b.onclick = async ()=>{
+        await sb.from("notifiche_lette").insert({ utente_id: state.session.user.id, evento_id: b.dataset.id });
+        await loadAll();
+        apriNotifiche();
+      };
+    });
+    const btnTutte = bodyEl.querySelector("#btn-segna-tutte-lette");
+    if(btnTutte) btnTutte.onclick = async ()=>{
+      const daSegnare = eventi.filter(ev=>!lette.has(ev.id)).map(ev=>({ utente_id: state.session.user.id, evento_id: ev.id }));
+      if(daSegnare.length>0) await sb.from("notifiche_lette").insert(daSegnare);
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
 // AUTH
 // ============================================================
 async function initAuth(){
@@ -176,7 +213,7 @@ async function handleLogout(){
 // CARICAMENTO DATI
 // ============================================================
 async function loadAll(){
-  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti, documenti] = await Promise.all([
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti, documenti, attivitaCrm, commentiSO, messaggiInterni, notificheEventi, notificheLette] = await Promise.all([
     sb.from("clienti").select("*").order("created_at",{ascending:false}),
     sb.from("cantieri").select("*").order("created_at",{ascending:false}),
     sb.from("articoli").select("*").order("created_at",{ascending:false}),
@@ -191,6 +228,11 @@ async function loadAll(){
     sb.from("fatture").select("*").order("data_emissione",{ascending:false}),
     sb.from("movimenti_cassa").select("*").order("data",{ascending:false}),
     sb.from("documenti").select("*").order("created_at",{ascending:false}),
+    sb.from("attivita_crm").select("*").order("data",{ascending:false}),
+    sb.from("commenti_service_order").select("*").order("created_at",{ascending:true}),
+    sb.from("messaggi_interni").select("*").order("created_at",{ascending:false}),
+    sb.from("notifiche_eventi").select("*").order("created_at",{ascending:false}).limit(100),
+    sb.from("notifiche_lette").select("*"),
   ]);
   state.data.clienti = clienti.data || [];
   state.data.cantieri = cantieri.data || [];
@@ -206,6 +248,11 @@ async function loadAll(){
   state.data.fatture = fatture.data || [];
   state.data.movimenti = movimenti.data || [];
   state.data.documenti = documenti.data || [];
+  state.data.attivitaCrm = attivitaCrm.data || [];
+  state.data.commentiSO = commentiSO.data || [];
+  state.data.messaggiInterni = messaggiInterni.data || [];
+  state.data.notificheEventi = notificheEventi.data || [];
+  state.data.notificheLette = notificheLette.data || [];
 }
 
 function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
@@ -262,14 +309,18 @@ async function render(){
     ["fornitori","Fornitori",vedeContabilita],
     ["fatture","Fatture",vedeContabilita],
     ["cassa","Cassa",vedeContabilita],
+    ["messaggi","Messaggi",isOperativo],
     ["andamento","Andamento azienda",vedeAndamento],
     ["utenti","Utenti",ruolo==="admin"]];
   if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
+
+  const nonLette = isOperativo? state.data.notificheEventi.filter(ev=>!state.data.notificheLette.some(l=>l.evento_id===ev.id)).length : 0;
 
   app.innerHTML = `
     <header>
       <h1>Gestionale Aziendale</h1>
       <div class="user-box">
+        ${isOperativo? `<button class="secondary" id="btn-notifiche">🔔 Notifiche${nonLette>0? ` <span class="badge danneggiato">${nonLette}</span>` : ""}</button>` : ""}
         <span>${escapeHtml(state.session.user.email)} ${ruolo? `<span class="badge in_uso">${escapeHtml(ruoloLabel(ruolo))}</span>` : ""}</span>
         <button class="secondary" id="btn-logout">Esci</button>
       </div>
@@ -278,6 +329,8 @@ async function render(){
     <main id="main-content"><div class="empty">Caricamento...</div></main>
   `;
   document.getElementById("btn-logout").onclick = handleLogout;
+  const btnNotifiche = document.getElementById("btn-notifiche");
+  if(btnNotifiche) btnNotifiche.onclick = apriNotifiche;
   document.querySelectorAll("#main-nav button").forEach(b=>{
     b.onclick = ()=>{ state.view = b.dataset.view; state.soAperto=null; state.preventivoAperto=null; render(); };
   });
@@ -294,6 +347,7 @@ async function render(){
   if(state.view==="fornitori") { main.innerHTML = viewFornitori(); wireFornitori(); }
   if(state.view==="fatture") { main.innerHTML = viewFatture(); wireFatture(); }
   if(state.view==="cassa") { main.innerHTML = viewCassa(); wireCassa(); }
+  if(state.view==="messaggi") { main.innerHTML = viewMessaggi(); wireMessaggi(); }
   if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
   if(state.view==="andamento") { main.innerHTML = await viewAndamento(); wireAndamento(); }
 }
@@ -634,9 +688,15 @@ function wireAndamento(){
 // ============================================================
 // CLIENTI
 // ============================================================
+function statoCrmLabel(s){ const map={prospect:"Prospect",contattato:"Contattato",preventivo_inviato:"Preventivo inviato",cliente:"Cliente",cliente_inattivo:"Cliente inattivo"}; return map[s]||"Prospect"; }
+function statoCrmClass(s){ const map={prospect:"in_revisione",contattato:"in_uso",preventivo_inviato:"in_corso",cliente:"chiuso",cliente_inattivo:"danneggiato"}; return map[s]||"in_revisione"; }
+function potenzialeLabel(s){ const map={basso:"Basso",medio:"Medio",alto:"Alto"}; return map[s]||"-"; }
+function nomeUtente(id){ const p = state.data.profiles.find(x=>x.id===id); return p? (p.full_name||"-") : "-"; }
 function viewClienti(){
-  const rows = state.data.clienti;
   const puoModificare = ["commerciale","contabile","admin"].includes(myRole());
+  const filtro = state.filtroClientiCrm || "tutti";
+  let rows = state.data.clienti;
+  if(filtro!=="tutti") rows = rows.filter(c=>(c.stato_crm||"prospect")===filtro);
   return `
     ${!puoModificare? "" : `
     <div class="card">
@@ -657,8 +717,16 @@ function viewClienti(){
     </div>`}
     <div class="card">
       <h2>Elenco clienti (${rows.length})</h2>
-      ${rows.length===0? `<div class="empty">Nessun cliente inserito.</div>` : `
-      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th><th>Cantieri</th><th></th></tr></thead>
+      <div class="pill-select" id="filtro-crm-clienti">
+        <button data-f="tutti" class="${filtro==="tutti"?"active":""}">Tutti</button>
+        <button data-f="prospect" class="${filtro==="prospect"?"active":""}">Prospect</button>
+        <button data-f="contattato" class="${filtro==="contattato"?"active":""}">Contattato</button>
+        <button data-f="preventivo_inviato" class="${filtro==="preventivo_inviato"?"active":""}">Preventivo inviato</button>
+        <button data-f="cliente" class="${filtro==="cliente"?"active":""}">Cliente</button>
+        <button data-f="cliente_inattivo" class="${filtro==="cliente_inattivo"?"active":""}">Cliente inattivo</button>
+      </div>
+      ${rows.length===0? `<div class="empty">Nessun cliente trovato.</div>` : `
+      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>Stato CRM</th><th>Commerciale</th><th>Cantieri</th><th></th></tr></thead>
       <tbody>
         ${rows.map(c=>`
           <tr>
@@ -666,9 +734,11 @@ function viewClienti(){
             <td>${escapeHtml(c.referente||"-")}</td>
             <td>${escapeHtml(c.telefono||"-")}</td>
             <td>${escapeHtml(c.email||"-")}</td>
-            <td>${escapeHtml(c.piva||"-")}</td>
+            <td><span class="badge ${statoCrmClass(c.stato_crm)}">${statoCrmLabel(c.stato_crm)}</span></td>
+            <td>${escapeHtml(nomeUtente(c.commerciale_assegnato))}</td>
             <td>${state.data.cantieri.filter(k=>k.cliente_id===c.id).length}</td>
             <td class="actions" style="margin:0;">
+              <button class="secondary btn-crm-cliente" data-id="${c.id}">📞 CRM</button>
               <button class="secondary btn-doc-cliente" data-id="${c.id}">📄 Documenti</button>
               ${puoModificare? `<button class="secondary btn-edit-cliente" data-id="${c.id}">Modifica</button>` : ""}
             </td>
@@ -697,7 +767,16 @@ function wireClienti(){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  document.querySelectorAll("#filtro-crm-clienti button").forEach(b=>{
+    b.onclick = ()=>{ state.filtroClientiCrm = b.dataset.f; render(); };
+  });
   document.querySelectorAll(".btn-edit-cliente").forEach(b=>{ b.onclick = ()=>editCliente(b.dataset.id); });
+  document.querySelectorAll(".btn-crm-cliente").forEach(b=>{
+    b.onclick = ()=>{
+      const c = state.data.clienti.find(x=>x.id===b.dataset.id);
+      renderModaleCrm(b.dataset.id, "CRM — "+(c? c.ragione_sociale : ""));
+    };
+  });
   document.querySelectorAll(".btn-doc-cliente").forEach(b=>{
     b.onclick = ()=>{
       const c = state.data.clienti.find(x=>x.id===b.dataset.id);
@@ -708,6 +787,7 @@ function wireClienti(){
 function editCliente(id){
   const c = state.data.clienti.find(x=>x.id===id);
   if(!c) return;
+  const commercialiOpts = state.data.profiles.map(p=>`<option value="${p.id}" ${p.id===c.commerciale_assegnato?"selected":""}>${escapeHtml(p.full_name||"-")}</option>`).join("");
   const body = `
     <form id="form-edit-cliente">
       <div class="form-grid">
@@ -720,6 +800,30 @@ function editCliente(id){
         <div><label>Settore</label><input id="ec-settore" value="${escapeHtml(c.settore||"")}"></div>
       </div>
       <label>Note</label><textarea id="ec-note">${escapeHtml(c.note||"")}</textarea>
+      <h3 style="margin-top:18px;">CRM</h3>
+      <div class="form-grid">
+        <div><label>Stato pipeline</label>
+          <select id="ec-stato-crm">
+            <option value="prospect" ${c.stato_crm==="prospect"?"selected":""}>Prospect</option>
+            <option value="contattato" ${c.stato_crm==="contattato"?"selected":""}>Contattato</option>
+            <option value="preventivo_inviato" ${c.stato_crm==="preventivo_inviato"?"selected":""}>Preventivo inviato</option>
+            <option value="cliente" ${c.stato_crm==="cliente"?"selected":""}>Cliente</option>
+            <option value="cliente_inattivo" ${c.stato_crm==="cliente_inattivo"?"selected":""}>Cliente inattivo</option>
+          </select>
+        </div>
+        <div><label>Potenziale commerciale</label>
+          <select id="ec-potenziale">
+            <option value="">-- non definito --</option>
+            <option value="basso" ${c.potenziale==="basso"?"selected":""}>Basso</option>
+            <option value="medio" ${c.potenziale==="medio"?"selected":""}>Medio</option>
+            <option value="alto" ${c.potenziale==="alto"?"selected":""}>Alto</option>
+          </select>
+        </div>
+        <div><label>Commerciale assegnato</label><select id="ec-commerciale"><option value="">-- nessuno --</option>${commercialiOpts}</select></div>
+        <div><label>Ultimo contatto</label><input type="date" id="ec-ultimo-contatto" value="${c.ultimo_contatto||""}"></div>
+        <div><label>Prossimo contatto</label><input type="date" id="ec-prossimo-contatto" value="${c.prossimo_contatto||""}"></div>
+      </div>
+      <label>Servizi/prodotti di interesse</label><textarea id="ec-servizi">${escapeHtml(c.servizi_interesse||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
         <button type="submit">Salva modifiche</button>
         <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
@@ -742,11 +846,79 @@ function editCliente(id){
         piva: bodyEl.querySelector("#ec-piva").value.trim() || null,
         settore: bodyEl.querySelector("#ec-settore").value.trim() || null,
         note: bodyEl.querySelector("#ec-note").value.trim() || null,
+        stato_crm: bodyEl.querySelector("#ec-stato-crm").value,
+        potenziale: bodyEl.querySelector("#ec-potenziale").value || null,
+        commerciale_assegnato: bodyEl.querySelector("#ec-commerciale").value || null,
+        ultimo_contatto: bodyEl.querySelector("#ec-ultimo-contatto").value || null,
+        prossimo_contatto: bodyEl.querySelector("#ec-prossimo-contatto").value || null,
+        servizi_interesse: bodyEl.querySelector("#ec-servizi").value.trim() || null,
       };
       const { error } = await sb.from("clienti").update(payload).eq("id", id);
       if(error){ alert("Errore: "+error.message); return; }
       closeModal();
       render();
+    };
+  });
+}
+
+// ============================================================
+// CRM: storico attività (chiamate, email, incontri, note) per cliente
+// ============================================================
+function renderModaleCrm(clienteId, titolo){
+  const c = state.data.clienti.find(x=>x.id===clienteId);
+  const attivita = state.data.attivitaCrm.filter(a=>a.cliente_id===clienteId);
+  const puoScrivere = ["commerciale","contabile","admin"].includes(myRole());
+  const body = `
+    ${c? `<p>
+      <span class="badge ${statoCrmClass(c.stato_crm)}">${statoCrmLabel(c.stato_crm)}</span>
+      ${c.potenziale? ` &nbsp; <strong>Potenziale:</strong> ${potenzialeLabel(c.potenziale)}` : ""}
+      ${c.commerciale_assegnato? ` &nbsp; <strong>Assegnato a:</strong> ${escapeHtml(nomeUtente(c.commerciale_assegnato))}` : ""}
+    </p>
+    ${c.ultimo_contatto || c.prossimo_contatto? `<p><small class="hint">
+      ${c.ultimo_contatto? "Ultimo contatto: "+fmtDateOnly(c.ultimo_contatto)+". " : ""}
+      ${c.prossimo_contatto? "Prossimo contatto: "+fmtDateOnly(c.prossimo_contatto)+"." : ""}
+    </small></p>` : ""}
+    ${c.servizi_interesse? `<p><strong>Interessi:</strong> ${escapeHtml(c.servizi_interesse)}</p>` : ""}` : ""}
+    ${puoScrivere? `
+    <form id="form-attivita-crm">
+      <div class="form-grid">
+        <div><label>Tipo</label>
+          <select id="ac-tipo">
+            <option value="chiamata">Chiamata</option>
+            <option value="email">Email</option>
+            <option value="incontro">Incontro</option>
+            <option value="nota">Nota</option>
+            <option value="altro">Altro</option>
+          </select>
+        </div>
+      </div>
+      <label>Descrizione</label><textarea id="ac-descrizione" required placeholder="Cosa è successo, cosa è stato deciso..."></textarea>
+      <div style="margin-top:10px;"><button type="submit">Aggiungi attività</button></div>
+    </form>` : ""}
+    <table style="margin-top:14px;"><thead><tr><th>Data</th><th>Tipo</th><th>Descrizione</th><th>Di</th></tr></thead>
+    <tbody>
+      ${attivita.length===0? `<tr><td colspan="4" class="empty">Nessuna attività registrata.</td></tr>` : attivita.map(a=>`
+        <tr>
+          <td>${fmtDate(a.data)}</td>
+          <td>${escapeHtml(a.tipo)}</td>
+          <td>${escapeHtml(a.descrizione)}</td>
+          <td>${escapeHtml(nomeUtente(a.creato_da))}</td>
+        </tr>
+      `).join("")}
+    </tbody></table>
+  `;
+  openModal(titolo, body, (bodyEl)=>{
+    const f = bodyEl.querySelector("#form-attivita-crm");
+    if(f) f.onsubmit = async (e)=>{
+      e.preventDefault();
+      const descrizione = bodyEl.querySelector("#ac-descrizione").value.trim();
+      if(!descrizione) return;
+      const { error } = await sb.from("attivita_crm").insert({
+        cliente_id: clienteId, tipo: bodyEl.querySelector("#ac-tipo").value, descrizione, creato_da: state.session.user.id,
+      });
+      if(error){ alert("Errore: "+error.message); return; }
+      await loadAll();
+      renderModaleCrm(clienteId, titolo);
     };
   });
 }
@@ -1294,11 +1466,42 @@ function viewServiceOrderDettaglio(id){
         ${righe.map(r=>`<tr><td>${fmtDate(r.data)}</td><td>${r.azione==="prelievo"?"Prelievo":"Reso"}</td><td>${escapeHtml(pezzoLabel(r.pezzo_id))}</td></tr>`).join("")}
       </tbody></table>`}
     </div>
+
+    <div class="card">
+      <h2>Commenti e comunicazioni interne</h2>
+      <form id="form-commento-so">
+        <textarea id="cm-testo" placeholder="Scrivi una nota o un aggiornamento per gli altri colleghi su questo Service Order..." required></textarea>
+        <div style="margin-top:10px;"><button type="submit">Aggiungi commento</button></div>
+      </form>
+      <div id="lista-commenti-so" style="margin-top:14px;"></div>
+    </div>
   `;
+}
+function renderCommentiSO(id){
+  const commenti = state.data.commentiSO.filter(c=>c.service_order_id===id);
+  const html = commenti.length===0? `<div class="empty">Nessun commento ancora.</div>` : commenti.map(c=>{
+    const autore = state.data.profiles.find(p=>p.id===c.creato_da);
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);">${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(c.created_at)}</div>
+      <div>${escapeHtml(c.testo)}</div>
+    </div>`;
+  }).join("");
+  const el = document.getElementById("lista-commenti-so");
+  if(el) el.innerHTML = html;
 }
 function wireServiceOrderDettaglio(id){
   document.getElementById("btn-torna-so").onclick = ()=>{ state.soAperto=null; render(); };
   const so = state.data.serviceOrders.find(s=>s.id===id);
+  renderCommentiSO(id);
+  const fCommento = document.getElementById("form-commento-so");
+  if(fCommento) fCommento.onsubmit = async (e)=>{
+    e.preventDefault();
+    const testo = document.getElementById("cm-testo").value.trim();
+    if(!testo) return;
+    const { error } = await sb.from("commenti_service_order").insert({ service_order_id: id, testo, creato_da: state.session.user.id });
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
   const btnChiudi = document.getElementById("btn-chiudi-so");
   if(btnChiudi) btnChiudi.onclick = async ()=>{
     const { error } = await sb.from("service_orders").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
@@ -2025,6 +2228,44 @@ function editMovimento(id){
       render();
     };
   });
+}
+
+// ============================================================
+// MESSAGGI INTERNI (bacheca tra Magazzino/Commerciale/Contabilità/Admin)
+// ============================================================
+function viewMessaggi(){
+  const rows = state.data.messaggiInterni;
+  return `
+    <div class="card">
+      <h2>Nuovo messaggio</h2>
+      <form id="form-messaggio">
+        <textarea id="msg-testo" placeholder="Scrivi un messaggio per gli altri colleghi..." required></textarea>
+        <div style="margin-top:10px;"><button type="submit">Invia</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Bacheca (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun messaggio ancora.</div>` : rows.map(m=>{
+        const autore = state.data.profiles.find(p=>p.id===m.creato_da);
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="font-size:12px;color:var(--muted);">${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(m.created_at)}</div>
+          <div>${escapeHtml(m.testo)}</div>
+        </div>`;
+      }).join("")}
+    </div>
+  `;
+}
+function wireMessaggi(){
+  const f = document.getElementById("form-messaggio");
+  if(!f) return;
+  f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const testo = document.getElementById("msg-testo").value.trim();
+    if(!testo) return;
+    const { error } = await sb.from("messaggi_interni").insert({ testo, creato_da: state.session.user.id });
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
 }
 
 // ============================================================
