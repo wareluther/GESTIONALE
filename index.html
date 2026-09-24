@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gestionale Aziendale</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
   :root{
     --primary:#1e5cb3; --primary-dark:#154585; --bg:#f4f6f9; --card:#ffffff;
@@ -72,6 +73,9 @@
   .modal{background:#fff;border-radius:10px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow:auto;}
   .modal h3{margin-top:0;}
   small.hint{color:var(--muted);}
+  .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:18px;}
+  .chart-wrap{position:relative;height:260px;}
+  .chart-wrap canvas{max-width:100%;}
 </style>
 </head>
 <body>
@@ -429,6 +433,17 @@ async function viewAndamento(){
     soAperti = kpi[0].service_order_attivi || 0;
     valMagazzino = Number(kpi[0].valore_magazzino) || 0;
   }
+  // Serie mensili (ultimi 12 mesi) per i grafici di andamento -----------------
+  const mesi = ultimiMesi(12);
+  const fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
+  const entrateMensili = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)));
+  const usciteMensili = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
+  state._andamentoCharts = {
+    fattCostiUtile: { labels: ["Fatturato","Costi","Utile"], valori: [fattTotale, costi, utile] },
+    incassatoVsDaIncassare: { labels: ["Incassato","Da incassare"], valori: [incassato, daIncassare] },
+    mesiLabels: mesi.map(m=>m.label),
+    fatturatoMensile, entrateMensili, usciteMensili,
+  };
   return `
     <div class="card">
       <h2>Andamento dell'azienda</h2>
@@ -446,9 +461,75 @@ async function viewAndamento(){
       <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
       <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
     </div>
+    <div class="charts-grid">
+      <div class="card">
+        <h2>Fatturato, costi e utile</h2>
+        <div class="chart-wrap"><canvas id="chart-fattcostiutile"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Composizione fatturato clienti</h2>
+        <div class="chart-wrap"><canvas id="chart-incassato"></canvas></div>
+      </div>
+      <div class="card" style="grid-column:1 / -1;">
+        <h2>Fatturato mensile (ultimi 12 mesi)</h2>
+        <div class="chart-wrap"><canvas id="chart-fatturato-mensile"></canvas></div>
+      </div>
+      <div class="card" style="grid-column:1 / -1;">
+        <h2>Entrate e uscite di cassa (ultimi 12 mesi)</h2>
+        <div class="chart-wrap"><canvas id="chart-cassa-mensile"></canvas></div>
+      </div>
+    </div>
   `;
 }
-function wireAndamento(){ /* vista di sola lettura, nessuna azione da collegare */ }
+// Helper per le serie mensili: ultimi n mesi (compreso quello corrente)
+function ultimiMesi(n){
+  const out = [];
+  const now = new Date();
+  for(let i=n-1;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    out.push({ key: d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"), label: d.toLocaleDateString("it-IT",{month:"short",year:"2-digit"}) });
+  }
+  return out;
+}
+function meseDi(dataStr){ return dataStr? String(dataStr).slice(0,7) : null; }
+function somma(rows, filtro, valore){ return rows.filter(filtro).reduce((s,r)=>s+valore(r),0); }
+
+// Palette validata (categorica, ordine fisso): blu, arancio, verde acqua
+const COLORE_BLU = "#2a78d6", COLORE_ARANCIO = "#eb6834", COLORE_AQUA = "#1baf7a";
+let _chartInstances = {};
+function disegnaGrafico(id, config){
+  const canvas = document.getElementById(id);
+  if(!canvas || typeof Chart === "undefined") return;
+  if(_chartInstances[id]) _chartInstances[id].destroy();
+  _chartInstances[id] = new Chart(canvas.getContext("2d"), config);
+}
+function wireAndamento(){
+  const c = state._andamentoCharts;
+  if(!c) return;
+  disegnaGrafico("chart-fattcostiutile", {
+    type: "bar",
+    data: { labels: c.fattCostiUtile.labels, datasets: [{ label:"Importo (€)", data: c.fattCostiUtile.valori, backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
+    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+  disegnaGrafico("chart-incassato", {
+    type: "doughnut",
+    data: { labels: c.incassatoVsDaIncassare.labels, datasets: [{ data: c.incassatoVsDaIncassare.valori, backgroundColor:[COLORE_BLU,COLORE_ARANCIO] }] },
+    options: { plugins:{ legend:{ position:"bottom" }, tooltip:{ callbacks:{ label:(ctx)=>ctx.label+": "+fmtMoney(ctx.raw) } } } }
+  });
+  disegnaGrafico("chart-fatturato-mensile", {
+    type: "line",
+    data: { labels: c.mesiLabels, datasets: [{ label:"Fatturato", data: c.fatturatoMensile, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false }] },
+    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+  disegnaGrafico("chart-cassa-mensile", {
+    type: "bar",
+    data: { labels: c.mesiLabels, datasets: [
+      { label:"Entrate", data: c.entrateMensili, backgroundColor: COLORE_BLU },
+      { label:"Uscite", data: c.usciteMensili, backgroundColor: COLORE_ARANCIO },
+    ]},
+    options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+}
 
 // ============================================================
 // CLIENTI
