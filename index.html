@@ -91,7 +91,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
   session: null,
   view: "dashboard",
-  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [] },
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [], documenti: [] },
   authMode: "login", // login | signup
   soAperto: null, // id service order aperto nel dettaglio
   preventivoAperto: null, // id preventivo aperto nel dettaglio
@@ -111,6 +111,34 @@ function statoLabel(s){
 function badge(s){ return `<span class="badge ${s}">${statoLabel(s)}</span>`; }
 function fmtDate(d){ if(!d) return "-"; const dt=new Date(d); return dt.toLocaleDateString("it-IT")+" "+dt.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"}); }
 function escapeHtml(str){ if(str==null) return ""; return String(str).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function soNumero(n){ return n==null? "------" : String(n).padStart(6,"0"); }
+
+// ============================================================
+// MODALE GENERICO (usato per Modifica e per i Documenti)
+// ============================================================
+function openModal(title, bodyHtml, onMount){
+  closeModal();
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.id = "modal-bg";
+  bg.innerHTML = `<div class="modal"><button type="button" class="close-x" id="modal-close" style="float:right;">✕</button><h3>${escapeHtml(title)}</h3><div id="modal-body">${bodyHtml}</div></div>`;
+  document.body.appendChild(bg);
+  document.getElementById("modal-close").onclick = closeModal;
+  bg.onclick = (e)=>{ if(e.target===bg) closeModal(); };
+  if(onMount) onMount(document.getElementById("modal-body"));
+}
+function closeModal(){
+  const bg = document.getElementById("modal-bg");
+  if(bg) bg.remove();
+}
+async function confirmDelete(table, id, labelCosa, afterOk){
+  if(!confirm(`Eliminare definitivamente ${labelCosa||"questo elemento"}?\nL'operazione non è reversibile.`)) return;
+  const { error } = await sb.from(table).delete().eq("id", id);
+  if(error){ alert("Errore durante l'eliminazione: "+error.message+"\n\n(Solo l'amministratore può eliminare. Se l'errore persiste contatta l'admin.)"); return; }
+  closeModal();
+  if(afterOk) afterOk();
+  render();
+}
 
 // ============================================================
 // AUTH
@@ -143,7 +171,7 @@ async function handleLogout(){
 // CARICAMENTO DATI
 // ============================================================
 async function loadAll(){
-  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti] = await Promise.all([
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti, documenti] = await Promise.all([
     sb.from("clienti").select("*").order("created_at",{ascending:false}),
     sb.from("cantieri").select("*").order("created_at",{ascending:false}),
     sb.from("articoli").select("*").order("created_at",{ascending:false}),
@@ -157,6 +185,7 @@ async function loadAll(){
     sb.from("fornitori").select("*").order("created_at",{ascending:false}),
     sb.from("fatture").select("*").order("data_emissione",{ascending:false}),
     sb.from("movimenti_cassa").select("*").order("data",{ascending:false}),
+    sb.from("documenti").select("*").order("created_at",{ascending:false}),
   ]);
   state.data.clienti = clienti.data || [];
   state.data.cantieri = cantieri.data || [];
@@ -171,6 +200,7 @@ async function loadAll(){
   state.data.fornitori = fornitori.data || [];
   state.data.fatture = fatture.data || [];
   state.data.movimenti = movimenti.data || [];
+  state.data.documenti = documenti.data || [];
 }
 
 function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
@@ -179,7 +209,7 @@ function articoloLabel(id){ const a = state.data.articoli.find(x=>x.id===id); re
 function pezzoLabel(id){ const p = state.data.pezzi.find(x=>x.id===id); return p ? `${p.dtr} (${articoloLabel(p.articolo_id)})` : "-"; }
 function myProfile(){ return state.session ? state.data.profiles.find(p=>p.id===state.session.user.id) : null; }
 function myRole(){ const p = myProfile(); return p ? p.ruolo : null; }
-function ruoloLabel(r){ const map={admin:"Amministratore",magazzino:"Magazzino",commerciale:"Commerciale",contabile:"Contabile"}; return map[r]||r; }
+function ruoloLabel(r){ const map={admin:"Amministratore",magazzino:"Magazzino",commerciale:"Commerciale",contabile:"Contabile",shareholder:"Socio/Azionista"}; return map[r]||r; }
 function prezzoArticolo(articoloId){ return state.data.listino.find(l=>l.articolo_id===articoloId) || null; }
 function fmtMoney(n){ if(n==null || isNaN(n)) return "-"; return Number(n).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})+" €"; }
 function tipoPrezzoLabel(t){ const map={vendita:"Vendita",noleggio_giornaliero:"Noleggio giorno",noleggio_settimanale:"Noleggio settimana",noleggio_mensile:"Noleggio mese"}; return map[t]||t; }
@@ -210,12 +240,15 @@ async function render(){
   }
   await loadAll();
   const ruolo = myRole();
-  const vedeMagazzino = ruolo!=="contabile"; // contabile non vede magazzino/pezzi/service order
-  const vedePrezzi = ruolo!=="magazzino"; // il magazzino non vede prezzi/listino/preventivi
+  const opRoles = ["magazzino","commerciale","contabile","admin"];
+  const isOperativo = opRoles.includes(ruolo); // uno shareholder non è un utente operativo
+  const vedeMagazzino = isOperativo && ruolo!=="contabile"; // contabile non vede magazzino/pezzi/service order
+  const vedePrezzi = isOperativo && ruolo!=="magazzino"; // il magazzino non vede prezzi/listino/preventivi
   const vedeContabilita = ["contabile","admin"].includes(ruolo);
-  const navItems = [["dashboard","Dashboard",true],
-    ["clienti","Clienti",true],
-    ["cantieri","Cantieri",true],
+  const vedeAndamento = ["shareholder","admin"].includes(ruolo);
+  const navItems = [["dashboard","Dashboard",isOperativo],
+    ["clienti","Clienti",isOperativo],
+    ["cantieri","Cantieri",isOperativo],
     ["magazzino","Magazzino",vedeMagazzino],
     ["pezzi","Pezzi (DTR)",vedeMagazzino],
     ["listino","Listino prezzi",vedePrezzi],
@@ -224,8 +257,9 @@ async function render(){
     ["fornitori","Fornitori",vedeContabilita],
     ["fatture","Fatture",vedeContabilita],
     ["cassa","Cassa",vedeContabilita],
+    ["andamento","Andamento azienda",vedeAndamento],
     ["utenti","Utenti",ruolo==="admin"]];
-  if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = "dashboard";
+  if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
 
   app.innerHTML = `
     <header>
@@ -256,6 +290,7 @@ async function render(){
   if(state.view==="fatture") { main.innerHTML = viewFatture(); wireFatture(); }
   if(state.view==="cassa") { main.innerHTML = viewCassa(); wireCassa(); }
   if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
+  if(state.view==="andamento") { main.innerHTML = viewAndamento(); wireAndamento(); }
 }
 
 function navBtn(view, label){
@@ -321,6 +356,13 @@ function renderLogin(){
 // ============================================================
 // DASHBOARD
 // ============================================================
+function valoreMagazzino(){
+  return state.data.pezzi.reduce((tot,p)=>{
+    const l = prezzoArticolo(p.articolo_id);
+    const v = l && l.prezzo_vendita!=null ? Number(l.prezzo_vendita) : 0;
+    return tot + v;
+  },0);
+}
 function viewDashboard(){
   const d = state.data;
   const ruolo = myRole();
@@ -329,17 +371,23 @@ function viewDashboard(){
   const daRevisionare = d.pezzi.filter(p=>p.stato==="in_revisione"||p.stato==="da_riparare").length;
   const cantieriAttivi = d.cantieri.filter(c=>c.stato==="attivo").length;
   const vedeContabilita = ["contabile","admin"].includes(ruolo);
+  const vedePrezzi = ruolo!=="magazzino";
   const daIncassare = d.fatture.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
   const scadute = d.fatture.filter(f=>f.tipo==="emessa" && isScaduta(f)).length;
+  const preventiviAperti = d.preventivi.filter(p=>p.stato==="bozza"||p.stato==="inviato").length;
+  const clientiInattivi = d.clienti.filter(c=>!d.cantieri.some(k=>k.cliente_id===c.id && k.stato==="attivo")).length;
   return `
     <div class="kpi-grid">
       <div class="kpi"><div class="num">${d.clienti.length}</div><div class="lbl">Clienti</div></div>
       <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
+      <div class="kpi"><div class="num">${clientiInattivi}</div><div class="lbl">Clienti senza cantieri attivi</div></div>
       <div class="kpi"><div class="num">${d.articoli.length}</div><div class="lbl">Articoli a catalogo</div></div>
       <div class="kpi"><div class="num">${d.pezzi.length}</div><div class="lbl">Pezzi totali (DTR)</div></div>
       <div class="kpi"><div class="num">${fuoriMagazzino}</div><div class="lbl">Pezzi fuori magazzino</div></div>
       <div class="kpi"><div class="num">${daRevisionare}</div><div class="lbl">Da revisionare/riparare</div></div>
       <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
+      ${vedePrezzi? `<div class="kpi"><div class="num">${preventiviAperti}</div><div class="lbl">Preventivi aperti</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valoreMagazzino())}</div><div class="lbl">Valore magazzino (a listino)</div></div>` : ""}
       ${vedeContabilita? `
       <div class="kpi"><div class="num">${fmtMoney(daIncassare)}</div><div class="lbl">Da incassare</div></div>
       <div class="kpi"><div class="num">${scadute}</div><div class="lbl">Fatture scadute</div></div>` : ""}
@@ -350,12 +398,49 @@ function viewDashboard(){
       <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Apertura</th></tr></thead>
       <tbody>
         ${d.serviceOrders.slice(0,8).map(s=>`
-          <tr><td>#${s.numero}</td><td>${escapeHtml(clienteNome(s.cliente_id))}</td><td>${escapeHtml(cantiereNome(s.cantiere_id))}</td><td>${badge(s.stato)}</td><td>${fmtDate(s.data_apertura)}</td></tr>
+          <tr><td>#${soNumero(s.numero)}</td><td>${escapeHtml(clienteNome(s.cliente_id))}</td><td>${escapeHtml(cantiereNome(s.cantiere_id))}</td><td>${badge(s.stato)}</td><td>${fmtDate(s.data_apertura)}</td></tr>
         `).join("")}
       </tbody></table>`}
     </div>
   `;
 }
+
+// ============================================================
+// ANDAMENTO AZIENDA (dashboard per gli shareholder/soci)
+// ============================================================
+function viewAndamento(){
+  const d = state.data;
+  const fattTotale = d.fatture.filter(f=>f.tipo==="emessa").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const incassato = d.fatture.filter(f=>f.tipo==="emessa" && f.stato==="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const daIncassare = d.fatture.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const costi = d.fatture.filter(f=>f.tipo==="ricevuta").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const utile = fattTotale - costi;
+  const entrateCassa = d.movimenti.filter(m=>m.tipo==="entrata").reduce((s,m)=>s+Number(m.importo),0);
+  const usciteCassa = d.movimenti.filter(m=>m.tipo==="uscita").reduce((s,m)=>s+Number(m.importo),0);
+  const saldoCassa = entrateCassa - usciteCassa;
+  const clientiAttivi = d.clienti.filter(c=>d.cantieri.some(k=>k.cliente_id===c.id && k.stato==="attivo")).length;
+  const cantieriAttivi = d.cantieri.filter(c=>c.stato==="attivo").length;
+  const soAperti = d.serviceOrders.filter(s=>s.stato==="aperto"||s.stato==="in_corso").length;
+  return `
+    <div class="card">
+      <h2>Andamento dell'azienda</h2>
+      <p><small class="hint">Vista di sola lettura riservata a soci/azionisti e amministratore: dati economici e operativi aggregati.</small></p>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="num">${fmtMoney(fattTotale)}</div><div class="lbl">Fatturato totale</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(incassato)}</div><div class="lbl">Incassato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(daIncassare)}</div><div class="lbl">Da incassare</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(costi)}</div><div class="lbl">Costi (fatture da fornitori)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(utile)}</div><div class="lbl">Utile stimato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(saldoCassa)}</div><div class="lbl">Saldo cassa/banca</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valoreMagazzino())}</div><div class="lbl">Valore magazzino (a listino)</div></div>
+      <div class="kpi"><div class="num">${clientiAttivi}</div><div class="lbl">Clienti attivi</div></div>
+      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
+      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
+    </div>
+  `;
+}
+function wireAndamento(){ /* vista di sola lettura, nessuna azione da collegare */ }
 
 // ============================================================
 // CLIENTI
@@ -384,7 +469,7 @@ function viewClienti(){
     <div class="card">
       <h2>Elenco clienti (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun cliente inserito.</div>` : `
-      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th><th>Cantieri</th></tr></thead>
+      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th><th>Cantieri</th><th></th></tr></thead>
       <tbody>
         ${rows.map(c=>`
           <tr>
@@ -394,6 +479,10 @@ function viewClienti(){
             <td>${escapeHtml(c.email||"-")}</td>
             <td>${escapeHtml(c.piva||"-")}</td>
             <td>${state.data.cantieri.filter(k=>k.cliente_id===c.id).length}</td>
+            <td class="actions" style="margin:0;">
+              <button class="secondary btn-doc-cliente" data-id="${c.id}">📄 Documenti</button>
+              ${puoModificare? `<button class="secondary btn-edit-cliente" data-id="${c.id}">Modifica</button>` : ""}
+            </td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -402,8 +491,7 @@ function viewClienti(){
 }
 function wireClienti(){
   const f = document.getElementById("form-cliente");
-  if(!f) return;
-  f.onsubmit = async (e)=>{
+  if(f) f.onsubmit = async (e)=>{
     e.preventDefault();
     const payload = {
       ragione_sociale: document.getElementById("c-ragione").value.trim(),
@@ -420,6 +508,117 @@ function wireClienti(){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  document.querySelectorAll(".btn-edit-cliente").forEach(b=>{ b.onclick = ()=>editCliente(b.dataset.id); });
+  document.querySelectorAll(".btn-doc-cliente").forEach(b=>{
+    b.onclick = ()=>{
+      const c = state.data.clienti.find(x=>x.id===b.dataset.id);
+      renderModaleDocumenti("cliente", b.dataset.id, "Documenti — "+(c? c.ragione_sociale : ""));
+    };
+  });
+}
+function editCliente(id){
+  const c = state.data.clienti.find(x=>x.id===id);
+  if(!c) return;
+  const body = `
+    <form id="form-edit-cliente">
+      <div class="form-grid">
+        <div><label>Ragione sociale *</label><input required id="ec-ragione" value="${escapeHtml(c.ragione_sociale)}"></div>
+        <div><label>Referente</label><input id="ec-referente" value="${escapeHtml(c.referente||"")}"></div>
+        <div><label>Telefono</label><input id="ec-telefono" value="${escapeHtml(c.telefono||"")}"></div>
+        <div><label>Email</label><input type="email" id="ec-email" value="${escapeHtml(c.email||"")}"></div>
+        <div><label>Indirizzo</label><input id="ec-indirizzo" value="${escapeHtml(c.indirizzo||"")}"></div>
+        <div><label>Partita IVA</label><input id="ec-piva" value="${escapeHtml(c.piva||"")}"></div>
+        <div><label>Settore</label><input id="ec-settore" value="${escapeHtml(c.settore||"")}"></div>
+      </div>
+      <label>Note</label><textarea id="ec-note">${escapeHtml(c.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina cliente</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica cliente", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("clienti", id, `il cliente "${c.ragione_sociale}" (e tutti i suoi cantieri)`);
+    bodyEl.querySelector("#form-edit-cliente").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        ragione_sociale: bodyEl.querySelector("#ec-ragione").value.trim(),
+        referente: bodyEl.querySelector("#ec-referente").value.trim() || null,
+        telefono: bodyEl.querySelector("#ec-telefono").value.trim() || null,
+        email: bodyEl.querySelector("#ec-email").value.trim() || null,
+        indirizzo: bodyEl.querySelector("#ec-indirizzo").value.trim() || null,
+        piva: bodyEl.querySelector("#ec-piva").value.trim() || null,
+        settore: bodyEl.querySelector("#ec-settore").value.trim() || null,
+        note: bodyEl.querySelector("#ec-note").value.trim() || null,
+      };
+      const { error } = await sb.from("clienti").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
+// DOCUMENTI (upload/scansione/foto, legati a cliente o cantiere)
+// ============================================================
+function renderModaleDocumenti(entitaTipo, entitaId, titolo){
+  const docs = state.data.documenti.filter(x=>x.entita_tipo===entitaTipo && x.entita_id===entitaId);
+  const ruolo = myRole();
+  const puoCaricare = ["commerciale","contabile","admin"].includes(ruolo);
+  const body = `
+    ${puoCaricare? `
+    <form id="form-documento">
+      <label>Carica file, scatta una foto o scansiona il documento</label>
+      <input type="file" id="doc-file" accept="image/*,application/pdf" capture="environment" required>
+      <div style="margin-top:10px;"><button type="submit">Carica documento</button></div>
+    </form>` : ""}
+    <div id="doc-upload-msg"></div>
+    <table style="margin-top:14px;"><thead><tr><th>File</th><th>Caricato il</th><th></th></tr></thead>
+    <tbody>
+      ${docs.length===0? `<tr><td colspan="3" class="empty">Nessun documento caricato.</td></tr>` : docs.map(doc=>`
+        <tr>
+          <td><a href="${doc.url}" target="_blank" rel="noopener">${escapeHtml(doc.nome_file)}</a></td>
+          <td>${fmtDate(doc.created_at)}</td>
+          <td>${ruolo==="admin"? `<button class="secondary btn-elimina-doc" data-id="${doc.id}">Elimina</button>` : ""}</td>
+        </tr>
+      `).join("")}
+    </tbody></table>
+  `;
+  openModal(titolo, body, (bodyEl)=>{
+    const f = bodyEl.querySelector("#form-documento");
+    if(f) f.onsubmit = async (e)=>{
+      e.preventDefault();
+      const input = bodyEl.querySelector("#doc-file");
+      const file = input.files[0];
+      if(!file) return;
+      const msg = bodyEl.querySelector("#doc-upload-msg");
+      msg.innerHTML = `<div class="msg">Caricamento in corso...</div>`;
+      const path = `${entitaTipo}/${entitaId}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await sb.storage.from("documenti").upload(path, file);
+      if(upErr){ msg.innerHTML = `<div class="msg error">Errore caricamento: ${escapeHtml(upErr.message)}</div>`; return; }
+      const { data: pub } = sb.storage.from("documenti").getPublicUrl(path);
+      const { error: insErr } = await sb.from("documenti").insert({
+        entita_tipo: entitaTipo, entita_id: entitaId, nome_file: file.name,
+        url: pub.publicUrl, content_type: file.type || null, caricato_da: state.session.user.id,
+      });
+      if(insErr){ msg.innerHTML = `<div class="msg error">Errore salvataggio: ${escapeHtml(insErr.message)}</div>`; return; }
+      await loadAll();
+      renderModaleDocumenti(entitaTipo, entitaId, titolo);
+    };
+    bodyEl.querySelectorAll(".btn-elimina-doc").forEach(b=>{
+      b.onclick = async ()=>{
+        if(!confirm("Eliminare questo documento?")) return;
+        const { error } = await sb.from("documenti").delete().eq("id", b.dataset.id);
+        if(error){ alert("Errore: "+error.message); return; }
+        await loadAll();
+        renderModaleDocumenti(entitaTipo, entitaId, titolo);
+      };
+    });
+  });
 }
 
 // ============================================================
@@ -451,7 +650,7 @@ function viewCantieri(){
     <div class="card">
       <h2>Elenco cantieri (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun cantiere inserito.</div>` : `
-      <table><thead><tr><th>Nome</th><th>Cliente</th><th>Indirizzo</th><th>Referente</th><th>Stato</th><th>Pezzi presenti</th></tr></thead>
+      <table><thead><tr><th>Nome</th><th>Cliente</th><th>Indirizzo</th><th>Referente</th><th>Stato</th><th>Pezzi presenti</th><th></th></tr></thead>
       <tbody>
         ${rows.map(k=>`
           <tr>
@@ -461,6 +660,10 @@ function viewCantieri(){
             <td>${escapeHtml(k.referente||"-")}</td>
             <td>${badge(k.stato)}</td>
             <td>${state.data.pezzi.filter(p=>p.cantiere_id===k.id).length}</td>
+            <td class="actions" style="margin:0;">
+              <button class="secondary btn-doc-cantiere" data-id="${k.id}">📄 Documenti</button>
+              ${puoModificare? `<button class="secondary btn-edit-cantiere" data-id="${k.id}">Modifica</button>` : ""}
+            </td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -469,8 +672,7 @@ function viewCantieri(){
 }
 function wireCantieri(){
   const f = document.getElementById("form-cantiere");
-  if(!f) return;
-  f.onsubmit = async (e)=>{
+  if(f) f.onsubmit = async (e)=>{
     e.preventDefault();
     const payload = {
       cliente_id: document.getElementById("k-cliente").value,
@@ -484,6 +686,61 @@ function wireCantieri(){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  document.querySelectorAll(".btn-edit-cantiere").forEach(b=>{ b.onclick = ()=>editCantiere(b.dataset.id); });
+  document.querySelectorAll(".btn-doc-cantiere").forEach(b=>{
+    b.onclick = ()=>{
+      const k = state.data.cantieri.find(x=>x.id===b.dataset.id);
+      renderModaleDocumenti("cantiere", b.dataset.id, "Documenti — "+(k? k.nome : ""));
+    };
+  });
+}
+function editCantiere(id){
+  const k = state.data.cantieri.find(x=>x.id===id);
+  if(!k) return;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}" ${c.id===k.cliente_id?"selected":""}>${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  const body = `
+    <form id="form-edit-cantiere">
+      <div class="form-grid">
+        <div><label>Cliente *</label><select required id="ek-cliente">${clientiOpts}</select></div>
+        <div><label>Nome cantiere *</label><input required id="ek-nome" value="${escapeHtml(k.nome)}"></div>
+        <div><label>Indirizzo</label><input id="ek-indirizzo" value="${escapeHtml(k.indirizzo||"")}"></div>
+        <div><label>Referente</label><input id="ek-referente" value="${escapeHtml(k.referente||"")}"></div>
+        <div><label>Stato</label>
+          <select id="ek-stato">
+            <option value="attivo" ${k.stato==="attivo"?"selected":""}>Attivo</option>
+            <option value="sospeso" ${k.stato==="sospeso"?"selected":""}>Sospeso</option>
+            <option value="concluso" ${k.stato==="concluso"?"selected":""}>Concluso</option>
+          </select>
+        </div>
+      </div>
+      <label>Note</label><textarea id="ek-note">${escapeHtml(k.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina cantiere</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica cantiere", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("cantieri", id, `il cantiere "${k.nome}"`);
+    bodyEl.querySelector("#form-edit-cantiere").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        cliente_id: bodyEl.querySelector("#ek-cliente").value,
+        nome: bodyEl.querySelector("#ek-nome").value.trim(),
+        indirizzo: bodyEl.querySelector("#ek-indirizzo").value.trim() || null,
+        referente: bodyEl.querySelector("#ek-referente").value.trim() || null,
+        stato: bodyEl.querySelector("#ek-stato").value,
+        note: bodyEl.querySelector("#ek-note").value.trim() || null,
+      };
+      const { error } = await sb.from("cantieri").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
 }
 
 // ============================================================
@@ -511,7 +768,7 @@ function viewMagazzino(){
     <div class="card">
       <h2>Catalogo articoli (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun articolo inserito.</div>` : `
-      <table><thead><tr><th>Codice</th><th>Descrizione</th><th>Dimensioni</th><th>Peso</th><th>Pezzi totali</th><th>Disponibili</th></tr></thead>
+      <table><thead><tr><th>Codice</th><th>Descrizione</th><th>Dimensioni</th><th>Peso</th><th>Pezzi totali</th><th>Disponibili</th>${puoModificare?"<th></th>":""}</tr></thead>
       <tbody>
         ${rows.map(a=>{
           const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
@@ -523,6 +780,7 @@ function viewMagazzino(){
             <td>${escapeHtml(a.peso||"-")}</td>
             <td>${pezziArt.length}</td>
             <td>${disp}</td>
+            ${puoModificare? `<td><button class="secondary btn-edit-articolo" data-id="${a.id}">Modifica</button></td>` : ""}
           </tr>`;
         }).join("")}
       </tbody></table>`}
@@ -531,8 +789,7 @@ function viewMagazzino(){
 }
 function wireMagazzino(){
   const f = document.getElementById("form-articolo");
-  if(!f) return;
-  f.onsubmit = async (e)=>{
+  if(f) f.onsubmit = async (e)=>{
     e.preventDefault();
     const payload = {
       codice: document.getElementById("a-codice").value.trim(),
@@ -546,6 +803,48 @@ function wireMagazzino(){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  document.querySelectorAll(".btn-edit-articolo").forEach(b=>{ b.onclick = ()=>editArticolo(b.dataset.id); });
+}
+function editArticolo(id){
+  const a = state.data.articoli.find(x=>x.id===id);
+  if(!a) return;
+  const body = `
+    <form id="form-edit-articolo">
+      <div class="form-grid">
+        <div><label>Codice articolo *</label><input required id="ea-codice" value="${escapeHtml(a.codice)}"></div>
+        <div><label>Descrizione *</label><input required id="ea-descrizione" value="${escapeHtml(a.descrizione)}"></div>
+        <div><label>Dimensioni</label><input id="ea-dimensioni" value="${escapeHtml(a.dimensioni||"")}"></div>
+        <div><label>Peso</label><input id="ea-peso" value="${escapeHtml(a.peso||"")}"></div>
+        <div><label>URL immagine</label><input id="ea-immagine" value="${escapeHtml(a.immagine_url||"")}"></div>
+      </div>
+      <label>Note</label><textarea id="ea-note">${escapeHtml(a.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina articolo</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica articolo", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("articoli", id, `l'articolo "${a.codice}"`);
+    bodyEl.querySelector("#form-edit-articolo").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        codice: bodyEl.querySelector("#ea-codice").value.trim(),
+        descrizione: bodyEl.querySelector("#ea-descrizione").value.trim(),
+        dimensioni: bodyEl.querySelector("#ea-dimensioni").value.trim() || null,
+        peso: bodyEl.querySelector("#ea-peso").value.trim() || null,
+        immagine_url: bodyEl.querySelector("#ea-immagine").value.trim() || null,
+        note: bodyEl.querySelector("#ea-note").value.trim() || null,
+      };
+      const { error } = await sb.from("articoli").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
 }
 
 // ============================================================
@@ -587,8 +886,9 @@ function viewPezzi(){
 function renderTabellaPezzi(filtro){
   let rows = state.data.pezzi;
   if(filtro && filtro!=="tutti") rows = rows.filter(p=>p.stato===filtro);
+  const puoModificare = ["magazzino","admin"].includes(myRole());
   const html = rows.length===0? `<div class="empty">Nessun pezzo trovato.</div>` : `
-    <table><thead><tr><th>DTR</th><th>Articolo</th><th>Stato</th><th>Posizione</th><th>Cliente/Cantiere</th></tr></thead>
+    <table><thead><tr><th>DTR</th><th>Articolo</th><th>Stato</th><th>Posizione</th><th>Cliente/Cantiere</th>${puoModificare?"<th></th>":""}</tr></thead>
     <tbody>
       ${rows.map(p=>`
         <tr>
@@ -597,10 +897,12 @@ function renderTabellaPezzi(filtro){
           <td>${badge(p.stato)}</td>
           <td>${escapeHtml(p.posizione||"-")}</td>
           <td>${p.cliente_id? escapeHtml(clienteNome(p.cliente_id))+(p.cantiere_id? " / "+escapeHtml(cantiereNome(p.cantiere_id)) : "") : "-"}</td>
+          ${puoModificare? `<td><button class="secondary btn-edit-pezzo" data-id="${p.id}">Modifica</button></td>` : ""}
         </tr>
       `).join("")}
     </tbody></table>`;
   document.getElementById("tabella-pezzi").innerHTML = html;
+  document.querySelectorAll(".btn-edit-pezzo").forEach(b=>{ b.onclick = ()=>editPezzo(b.dataset.id, filtro); });
 }
 function wirePezzi(){
   const f = document.getElementById("form-pezzo");
@@ -622,6 +924,46 @@ function wirePezzi(){
       document.querySelectorAll("#filtro-stato button").forEach(x=>x.classList.remove("active"));
       b.classList.add("active");
       renderTabellaPezzi(b.dataset.f);
+    };
+  });
+}
+function editPezzo(id){
+  const p = state.data.pezzi.find(x=>x.id===id);
+  if(!p) return;
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}" ${a.id===p.articolo_id?"selected":""}>${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  const stati = ["disponibile","in_uso","in_revisione","da_riparare","danneggiato","fuori_servizio"];
+  const body = `
+    <form id="form-edit-pezzo">
+      <div class="form-grid">
+        <div><label>Articolo *</label><select required id="ep-articolo">${articoliOpts}</select></div>
+        <div><label>DTR (codice univoco) *</label><input required id="ep-dtr" value="${escapeHtml(p.dtr)}"></div>
+        <div><label>Posizione in magazzino</label><input id="ep-posizione" value="${escapeHtml(p.posizione||"")}"></div>
+        <div><label>Stato</label><select id="ep-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
+      </div>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina pezzo</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica pezzo", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("pezzi", id, `il pezzo "${p.dtr}"`);
+    bodyEl.querySelector("#form-edit-pezzo").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        articolo_id: bodyEl.querySelector("#ep-articolo").value,
+        dtr: bodyEl.querySelector("#ep-dtr").value.trim(),
+        posizione: bodyEl.querySelector("#ep-posizione").value.trim() || null,
+        stato: bodyEl.querySelector("#ep-stato").value,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await sb.from("pezzi").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
     };
   });
 }
@@ -657,7 +999,7 @@ function viewServiceOrder(){
       <tbody>
         ${rows.map(s=>`
           <tr>
-            <td>#${s.numero}</td>
+            <td>#${soNumero(s.numero)}</td>
             <td>${escapeHtml(clienteNome(s.cliente_id))}</td>
             <td>${escapeHtml(cantiereNome(s.cantiere_id))}</td>
             <td>${badge(s.stato)}</td>
@@ -713,13 +1055,14 @@ function viewServiceOrderDettaglio(id){
   return `
     <button class="secondary" id="btn-torna-so">&larr; Torna all'elenco</button>
     <div class="card" style="margin-top:14px;">
-      <h2>Service Order #${so.numero} ${badge(so.stato)}</h2>
+      <h2>Service Order #${soNumero(so.numero)} ${badge(so.stato)}</h2>
       <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(so.cliente_id))} &nbsp;
          <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(so.cantiere_id))} &nbsp;
          <strong>Aperto il:</strong> ${fmtDate(so.data_apertura)}</p>
       ${so.note? `<p><em>${escapeHtml(so.note)}</em></p>` : ""}
       <div class="actions">
         ${so.stato!=="chiuso" && so.stato!=="annullato" ? `<button class="secondary" id="btn-chiudi-so">Chiudi Service Order</button>` : ""}
+        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-so">Elimina Service Order</button>` : ""}
       </div>
     </div>
 
@@ -773,6 +1116,8 @@ function wireServiceOrderDettaglio(id){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  const btnEliminaSo = document.getElementById("btn-elimina-so");
+  if(btnEliminaSo) btnEliminaSo.onclick = ()=>confirmDelete("service_orders", id, `il Service Order #${soNumero(so.numero)}`, ()=>{ state.soAperto=null; });
   const fPrelievo = document.getElementById("form-prelievo");
   if(fPrelievo) fPrelievo.onsubmit = async (e)=>{
     e.preventDefault();
@@ -1010,6 +1355,7 @@ function viewPreventivoDettaglio(id){
     <div class="actions" style="margin-bottom:0;">
       <button class="secondary" id="btn-torna-pv">&larr; Torna all'elenco</button>
       <button class="secondary" id="btn-stampa-pv">🖨️ Stampa / PDF</button>
+      ${myRole()==="admin"? `<button class="danger" id="btn-elimina-pv">Elimina preventivo</button>` : ""}
     </div>
     <div class="card" style="margin-top:14px;">
       <h2>Preventivo #${pv.numero} <span class="badge ${statoPreventivoLabelClass(pv.stato)}">${statoPreventivoLabel(pv.stato)}</span></h2>
@@ -1022,7 +1368,7 @@ function viewPreventivoDettaglio(id){
         ${pv.stato==="bozza"? `<button class="secondary btn-stato-pv" data-stato="inviato">Segna come inviato</button>` : ""}
         ${pv.stato==="inviato"? `<button class="secondary btn-stato-pv" data-stato="accettato">Segna come accettato</button><button class="secondary btn-stato-pv" data-stato="rifiutato">Segna come rifiutato</button>` : ""}
         ${pv.stato==="accettato" && !soCollegato? `<button id="btn-crea-so-da-pv">Crea Service Order da questo preventivo</button>` : ""}
-        ${soCollegato? `<span class="hint">Service Order collegato: #${soCollegato.numero}</span>` : ""}
+        ${soCollegato? `<span class="hint">Service Order collegato: #${soNumero(soCollegato.numero)}</span>` : ""}
       </div>` : ""}
     </div>
     <div class="card">
@@ -1067,6 +1413,11 @@ function viewPreventivoDettaglio(id){
 function wirePreventivoDettaglio(id){
   document.getElementById("btn-torna-pv").onclick = ()=>{ state.preventivoAperto=null; render(); };
   document.getElementById("btn-stampa-pv").onclick = ()=>{ stampaPreventivo(id); };
+  const btnEliminaPv = document.getElementById("btn-elimina-pv");
+  if(btnEliminaPv){
+    const pv = state.data.preventivi.find(p=>p.id===id);
+    btnEliminaPv.onclick = ()=>confirmDelete("preventivi", id, `il preventivo #${pv? pv.numero : ""}`, ()=>{ state.preventivoAperto=null; });
+  }
   document.querySelectorAll(".btn-stato-pv").forEach(b=>{
     b.onclick = async ()=>{
       const { error } = await sb.from("preventivi").update({ stato: b.dataset.stato }).eq("id", id);
@@ -1144,7 +1495,7 @@ function viewFornitori(){
     <div class="card">
       <h2>Elenco fornitori (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun fornitore inserito.</div>` : `
-      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th></tr></thead>
+      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th><th></th></tr></thead>
       <tbody>
         ${rows.map(f=>`
           <tr>
@@ -1153,6 +1504,7 @@ function viewFornitori(){
             <td>${escapeHtml(f.telefono||"-")}</td>
             <td>${escapeHtml(f.email||"-")}</td>
             <td>${escapeHtml(f.piva||"-")}</td>
+            <td><button class="secondary btn-edit-fornitore" data-id="${f.id}">Modifica</button></td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -1161,8 +1513,7 @@ function viewFornitori(){
 }
 function wireFornitori(){
   const f = document.getElementById("form-fornitore");
-  if(!f) return;
-  f.onsubmit = async (e)=>{
+  if(f) f.onsubmit = async (e)=>{
     e.preventDefault();
     const payload = {
       ragione_sociale: document.getElementById("f-ragione").value.trim(),
@@ -1178,6 +1529,50 @@ function wireFornitori(){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  document.querySelectorAll(".btn-edit-fornitore").forEach(b=>{ b.onclick = ()=>editFornitore(b.dataset.id); });
+}
+function editFornitore(id){
+  const f = state.data.fornitori.find(x=>x.id===id);
+  if(!f) return;
+  const body = `
+    <form id="form-edit-fornitore">
+      <div class="form-grid">
+        <div><label>Ragione sociale *</label><input required id="ef-ragione" value="${escapeHtml(f.ragione_sociale)}"></div>
+        <div><label>Referente</label><input id="ef-referente" value="${escapeHtml(f.referente||"")}"></div>
+        <div><label>Telefono</label><input id="ef-telefono" value="${escapeHtml(f.telefono||"")}"></div>
+        <div><label>Email</label><input type="email" id="ef-email" value="${escapeHtml(f.email||"")}"></div>
+        <div><label>Indirizzo</label><input id="ef-indirizzo" value="${escapeHtml(f.indirizzo||"")}"></div>
+        <div><label>Partita IVA</label><input id="ef-piva" value="${escapeHtml(f.piva||"")}"></div>
+      </div>
+      <label>Note</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina fornitore</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica fornitore", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("fornitori", id, `il fornitore "${f.ragione_sociale}"`);
+    bodyEl.querySelector("#form-edit-fornitore").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        ragione_sociale: bodyEl.querySelector("#ef-ragione").value.trim(),
+        referente: bodyEl.querySelector("#ef-referente").value.trim() || null,
+        telefono: bodyEl.querySelector("#ef-telefono").value.trim() || null,
+        email: bodyEl.querySelector("#ef-email").value.trim() || null,
+        indirizzo: bodyEl.querySelector("#ef-indirizzo").value.trim() || null,
+        piva: bodyEl.querySelector("#ef-piva").value.trim() || null,
+        note: bodyEl.querySelector("#ef-note").value.trim() || null,
+      };
+      const { error } = await sb.from("fornitori").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
 }
 
 // ============================================================
@@ -1187,7 +1582,7 @@ function viewFatture(){
   const rows = state.data.fatture;
   const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
   const fornitoriOpts = state.data.fornitori.map(f=>`<option value="${f.id}">${escapeHtml(f.ragione_sociale)}</option>`).join("");
-  const soOpts = state.data.serviceOrders.map(s=>`<option value="${s.id}">#${s.numero} - ${escapeHtml(clienteNome(s.cliente_id))}</option>`).join("");
+  const soOpts = state.data.serviceOrders.map(s=>`<option value="${s.id}">#${soNumero(s.numero)} - ${escapeHtml(clienteNome(s.cliente_id))}</option>`).join("");
   const totIncassare = rows.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
   const totScadute = rows.filter(f=>f.tipo==="emessa" && isScaduta(f)).reduce((s,f)=>s+Number(f.importo_totale),0);
   const totDaPagare = rows.filter(f=>f.tipo==="ricevuta" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
@@ -1237,12 +1632,59 @@ function viewFatture(){
             <td>
               ${f.stato!=="pagata"? `<button class="secondary btn-segna-pagata" data-id="${f.id}">Segna pagata</button>` : ""}
               ${f.stato==="non_pagata"? `<button class="secondary btn-segna-insoluto" data-id="${f.id}">Insoluto</button>` : ""}
+              <button class="secondary btn-edit-fattura" data-id="${f.id}">Modifica</button>
             </td>
           </tr>`;
         }).join("")}
       </tbody></table>`}
     </div>
   `;
+}
+function editFattura(id){
+  const f = state.data.fatture.find(x=>x.id===id);
+  if(!f) return;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}" ${c.id===f.cliente_id?"selected":""}>${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  const fornitoriOpts = state.data.fornitori.map(x=>`<option value="${x.id}" ${x.id===f.fornitore_id?"selected":""}>${escapeHtml(x.ragione_sociale)}</option>`).join("");
+  const body = `
+    <form id="form-edit-fattura">
+      <div class="form-grid">
+        <div><label>Cliente/Fornitore</label>
+          ${f.tipo==="emessa"? `<select id="ef-cliente">${clientiOpts}</select>` : `<select id="ef-fornitore">${fornitoriOpts}</select>`}
+        </div>
+        <div><label>Data emissione</label><input type="date" id="ef-emissione" value="${f.data_emissione||""}"></div>
+        <div><label>Data scadenza</label><input type="date" id="ef-scadenza" value="${f.data_scadenza||""}"></div>
+        <div><label>Imponibile (€) *</label><input type="number" step="0.01" required id="ef-imponibile" value="${f.importo_imponibile}"></div>
+        <div><label>IVA %</label><input type="number" step="0.01" id="ef-iva" value="${f.iva_percentuale}"></div>
+      </div>
+      <label>Note</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina fattura</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal(`Modifica fattura #${f.numero}`, body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("fatture", id, `la fattura #${f.numero}`);
+    bodyEl.querySelector("#form-edit-fattura").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        data_emissione: bodyEl.querySelector("#ef-emissione").value || f.data_emissione,
+        data_scadenza: bodyEl.querySelector("#ef-scadenza").value || null,
+        importo_imponibile: parseFloat(bodyEl.querySelector("#ef-imponibile").value) || 0,
+        iva_percentuale: parseFloat(bodyEl.querySelector("#ef-iva").value) || 0,
+        note: bodyEl.querySelector("#ef-note").value.trim() || null,
+      };
+      if(f.tipo==="emessa") payload.cliente_id = bodyEl.querySelector("#ef-cliente").value;
+      else payload.fornitore_id = bodyEl.querySelector("#ef-fornitore").value;
+      const { error } = await sb.from("fatture").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
 }
 function wireFatture(){
   const selTipo = document.getElementById("ft-tipo");
@@ -1289,6 +1731,7 @@ function wireFatture(){
       render();
     };
   });
+  document.querySelectorAll(".btn-edit-fattura").forEach(b=>{ b.onclick = ()=>editFattura(b.dataset.id); });
 }
 
 // ============================================================
@@ -1321,7 +1764,7 @@ function viewCassa(){
     <div class="card">
       <h2>Movimenti (${rows.length})</h2>
       ${rows.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
-      <table><thead><tr><th>Data</th><th>Tipo</th><th>Metodo</th><th>Importo</th><th>Descrizione</th></tr></thead>
+      <table><thead><tr><th>Data</th><th>Tipo</th><th>Metodo</th><th>Importo</th><th>Descrizione</th><th></th></tr></thead>
       <tbody>
         ${rows.map(m=>`
           <tr>
@@ -1330,6 +1773,7 @@ function viewCassa(){
             <td>${m.metodo==='banca'?'Banca':'Cassa'}</td>
             <td>${fmtMoney(m.importo)}</td>
             <td>${escapeHtml(m.descrizione||"-")}</td>
+            <td><button class="secondary btn-edit-movimento" data-id="${m.id}">Modifica</button></td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -1338,8 +1782,7 @@ function viewCassa(){
 }
 function wireCassa(){
   const f = document.getElementById("form-movimento");
-  if(!f) return;
-  f.onsubmit = async (e)=>{
+  if(f) f.onsubmit = async (e)=>{
     e.preventDefault();
     const payload = {
       tipo: document.getElementById("mv-tipo").value,
@@ -1353,6 +1796,46 @@ function wireCassa(){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  document.querySelectorAll(".btn-edit-movimento").forEach(b=>{ b.onclick = ()=>editMovimento(b.dataset.id); });
+}
+function editMovimento(id){
+  const m = state.data.movimenti.find(x=>x.id===id);
+  if(!m) return;
+  const body = `
+    <form id="form-edit-movimento">
+      <div class="form-grid">
+        <div><label>Tipo *</label><select required id="em-tipo"><option value="entrata" ${m.tipo==="entrata"?"selected":""}>Entrata</option><option value="uscita" ${m.tipo==="uscita"?"selected":""}>Uscita</option></select></div>
+        <div><label>Metodo</label><select id="em-metodo"><option value="banca" ${m.metodo==="banca"?"selected":""}>Banca</option><option value="cassa" ${m.metodo==="cassa"?"selected":""}>Cassa</option></select></div>
+        <div><label>Importo (€) *</label><input type="number" step="0.01" required id="em-importo" value="${m.importo}"></div>
+        <div><label>Data</label><input type="date" id="em-data" value="${m.data||""}"></div>
+      </div>
+      <label>Descrizione</label><textarea id="em-descrizione">${escapeHtml(m.descrizione||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina movimento</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica movimento", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("movimenti_cassa", id, "questo movimento");
+    bodyEl.querySelector("#form-edit-movimento").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        tipo: bodyEl.querySelector("#em-tipo").value,
+        metodo: bodyEl.querySelector("#em-metodo").value,
+        importo: parseFloat(bodyEl.querySelector("#em-importo").value) || 0,
+        data: bodyEl.querySelector("#em-data").value || m.data,
+        descrizione: bodyEl.querySelector("#em-descrizione").value.trim() || null,
+      };
+      const { error } = await sb.from("movimenti_cassa").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
 }
 
 // ============================================================
@@ -1363,19 +1846,20 @@ function viewUtenti(){
   return `
     <div class="card">
       <h2>Utenti e ruoli</h2>
-      <p><small class="hint">Assegna a ciascun utente il ruolo corretto. Magazzino: gestisce quantità e pezzi. Commerciale: gestisce clienti/cantieri. Contabile: vede clienti/cantieri (non il magazzino). Admin: accesso completo.</small></p>
+      <p><small class="hint">Assegna a ciascun utente il ruolo corretto. Magazzino: gestisce quantità e pezzi. Commerciale: gestisce clienti/cantieri. Contabile: vede clienti/cantieri (non il magazzino). Socio/Azionista: sola lettura dell'andamento aziendale. Admin: accesso completo.</small></p>
       <table><thead><tr><th>Utente</th><th>Ruolo attuale</th><th>Cambia ruolo</th></tr></thead>
       <tbody>
         ${rows.map(p=>`
           <tr>
             <td>${escapeHtml(p.full_name||"-")}</td>
-            <td>${badge(p.ruolo==="admin"?"chiuso":p.ruolo==="magazzino"?"disponibile":p.ruolo==="commerciale"?"in_uso":"in_revisione")} ${escapeHtml(ruoloLabel(p.ruolo))}</td>
+            <td>${badge(p.ruolo==="admin"?"chiuso":p.ruolo==="magazzino"?"disponibile":p.ruolo==="commerciale"?"in_uso":p.ruolo==="shareholder"?"aperto":"in_revisione")} ${escapeHtml(ruoloLabel(p.ruolo))}</td>
             <td>
               <select data-id="${p.id}" class="sel-ruolo">
                 <option value="admin" ${p.ruolo==="admin"?"selected":""}>Amministratore</option>
                 <option value="magazzino" ${p.ruolo==="magazzino"?"selected":""}>Magazzino</option>
                 <option value="commerciale" ${p.ruolo==="commerciale"?"selected":""}>Commerciale</option>
                 <option value="contabile" ${p.ruolo==="contabile"?"selected":""}>Contabile</option>
+                <option value="shareholder" ${p.ruolo==="shareholder"?"selected":""}>Socio/Azionista</option>
               </select>
             </td>
           </tr>
