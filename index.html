@@ -826,9 +826,22 @@ function wireListino(){
         iva_percentuale: parseFloat(tr.querySelector(".lp-iva").value) || 0,
         updated_at: new Date().toISOString(),
       };
-      const { error } = await sb.from("listino_prezzi").upsert(payload, { onConflict: "articolo_id" });
-      if(error){ alert("Errore: "+error.message); return; }
-      render();
+      const originalLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Salvataggio...";
+      const { data, error } = await sb.from("listino_prezzi").upsert(payload, { onConflict: "articolo_id" }).select();
+      if(error){
+        alert("Errore nel salvataggio: "+error.message+"\n\n(Codice: "+(error.code||"n/d")+")");
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+        return;
+      }
+      if(data && data[0]){
+        const idx = state.data.listino.findIndex(l=>l.articolo_id===payload.articolo_id);
+        if(idx>=0) state.data.listino[idx] = data[0]; else state.data.listino.push(data[0]);
+      }
+      btn.textContent = "✓ Salvato";
+      setTimeout(()=>{ btn.disabled=false; btn.textContent = originalLabel; }, 1500);
     };
   });
 }
@@ -1127,4 +1140,3 @@ initAuth();
 </script>
 </body>
 </html>
-
