@@ -468,7 +468,6 @@ function viewDashboard(){
 // ANDAMENTO AZIENDA (dashboard per gli shareholder/soci)
 // ============================================================
 async function viewAndamento(){
-  const d = state.data;
   const now = new Date();
   const annoCorrente = now.getFullYear();
   const annoScorso = annoCorrente - 1;
@@ -476,7 +475,8 @@ async function viewAndamento(){
 
   // Clienti/cantieri/pezzi/service order NON sono più leggibili direttamente
   // dallo shareholder (bloccati a livello di database): i totali arrivano
-  // da una funzione dedicata che calcola solo i numeri aggregati (sempre "ad oggi").
+  // da funzioni dedicate che calcolano SOLO numeri aggregati (mai righe grezze),
+  // sempre lato server: il browser non riceve più fatture/movimenti di cassa.
   let clientiAttivi = 0, cantieriAttivi = 0, soAperti = 0, valMagazzino = 0;
   const { data: kpi, error: kpiErr } = await sb.rpc("andamento_kpi");
   if(!kpiErr && kpi && kpi[0]){
@@ -486,56 +486,54 @@ async function viewAndamento(){
     valMagazzino = Number(kpi[0].valore_magazzino) || 0;
   }
 
-  // Totali economici in base al periodo selezionato -----------------------
-  let fatturePeriodo = d.fatture, movimentiPeriodo = d.movimenti, etichettaPeriodo = "Da sempre";
-  if(periodo==="annocorrente"){
-    fatturePeriodo = filtraAnno(d.fatture, "data_emissione", annoCorrente);
-    movimentiPeriodo = filtraAnno(d.movimenti, "data", annoCorrente);
-    etichettaPeriodo = "Anno "+annoCorrente;
-  } else if(periodo==="annoscorso"){
-    fatturePeriodo = filtraAnno(d.fatture, "data_emissione", annoScorso);
-    movimentiPeriodo = filtraAnno(d.movimenti, "data", annoScorso);
-    etichettaPeriodo = "Anno "+annoScorso;
-  } else if(periodo==="confronto"){
-    fatturePeriodo = filtraAnno(d.fatture, "data_emissione", annoCorrente);
-    movimentiPeriodo = filtraAnno(d.movimenti, "data", annoCorrente);
-    etichettaPeriodo = "Anno "+annoCorrente+" (confronto con "+annoScorso+" nei grafici)";
-  }
-  const fin = calcolaFinanziari(fatturePeriodo, movimentiPeriodo);
+  // Totali economici in base al periodo selezionato (calcolati sul server) -----
+  const periodoPerTotali = periodo==="confronto" ? "annocorrente" : periodo;
+  let etichettaPeriodo = "Da sempre";
+  if(periodo==="annocorrente") etichettaPeriodo = "Anno "+annoCorrente;
+  else if(periodo==="annoscorso") etichettaPeriodo = "Anno "+annoScorso;
+  else if(periodo==="confronto") etichettaPeriodo = "Anno "+annoCorrente+" (confronto con "+annoScorso+" nei grafici)";
 
-  // Serie mensili per i grafici, in base al periodo ------------------------
-  const mesiBrevi = [...Array(12).keys()].map(m=>new Date(2000,m,1).toLocaleDateString("it-IT",{month:"short"}));
-  let mesiLabels, fatturatoMensile, saldoMensile, fatturatoMensileB=null, saldoMensileB=null, legendaAnnoA=null, legendaAnnoB=null;
-  if(periodo==="annocorrente"){
-    const mesi = mesiDiAnno(annoCorrente, now.getMonth());
-    mesiLabels = mesi.map(m=>m.label);
-    fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
-    saldoMensile = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
-  } else if(periodo==="annoscorso"){
-    const mesi = mesiDiAnno(annoScorso, 11);
-    mesiLabels = mesi.map(m=>m.label);
-    fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
-    saldoMensile = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
-  } else if(periodo==="confronto"){
-    mesiLabels = mesiBrevi;
-    legendaAnnoA = "Anno "+annoScorso; legendaAnnoB = "Anno "+annoCorrente;
-    fatturatoMensile = mesiBrevi.map((_,m)=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===(annoScorso+"-"+String(m+1).padStart(2,"0")), f=>Number(f.importo_totale)));
-    fatturatoMensileB = mesiBrevi.map((_,m)=> m<=now.getMonth()? somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===(annoCorrente+"-"+String(m+1).padStart(2,"0")), f=>Number(f.importo_totale)) : null);
-    saldoMensile = mesiBrevi.map((_,m)=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===(annoScorso+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===(annoScorso+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo)));
-    saldoMensileB = mesiBrevi.map((_,m)=> m<=now.getMonth()? (somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===(annoCorrente+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===(annoCorrente+"-"+String(m+1).padStart(2,"0")), x=>Number(x.importo))) : null);
-  } else { // rolling12 (Da sempre)
-    const mesi = ultimiMesi(12);
-    mesiLabels = mesi.map(m=>m.label);
-    fatturatoMensile = mesi.map(m=>somma(d.fatture, f=>f.tipo==="emessa" && meseDi(f.data_emissione)===m.key, f=>Number(f.importo_totale)));
-    saldoMensile = mesi.map(m=>somma(d.movimenti, x=>x.tipo==="entrata" && meseDi(x.data)===m.key, x=>Number(x.importo)) - somma(d.movimenti, x=>x.tipo==="uscita" && meseDi(x.data)===m.key, x=>Number(x.importo)));
-  }
+  const { data: totRaw, error: totErr } = await sb.rpc("andamento_totali", { p_periodo: periodoPerTotali });
+  const fin = (!totErr && totRaw) ? {
+    fatturato: Number(totRaw.fatturato)||0, incassato: Number(totRaw.incassato)||0,
+    daIncassare: Number(totRaw.da_incassare)||0, costi: Number(totRaw.costi)||0,
+    utile: Number(totRaw.utile)||0, entrate: Number(totRaw.entrate)||0,
+    uscite: Number(totRaw.uscite)||0, saldo: Number(totRaw.saldo)||0,
+  } : { fatturato:0, incassato:0, daIncassare:0, costi:0, utile:0, entrate:0, uscite:0, saldo:0 };
 
-  // Confronto anni per i grafici a barre in alto ---------------------------
-  let confrontoBarre = null;
+  // Serie mensili e confronto anni: anche queste arrivano già calcolate dal server -
+  let mesiLabels=[], fatturatoMensile=[], saldoMensile=[], fatturatoMensileB=null, saldoMensileB=null, legendaAnnoA=null, legendaAnnoB=null, confrontoBarre=null;
+
   if(periodo==="confronto"){
-    const finA = calcolaFinanziari(filtraAnno(d.fatture,"data_emissione",annoScorso), filtraAnno(d.movimenti,"data",annoScorso));
-    const finB = calcolaFinanziari(filtraAnno(d.fatture,"data_emissione",annoCorrente), filtraAnno(d.movimenti,"data",annoCorrente));
-    confrontoBarre = { annoA: annoScorso, annoB: annoCorrente, finA, finB };
+    legendaAnnoA = "Anno "+annoScorso; legendaAnnoB = "Anno "+annoCorrente;
+    mesiLabels = [...Array(12).keys()].map(m=>new Date(2000,m,1).toLocaleDateString("it-IT",{month:"short"}));
+    const { data: righeConfronto } = await sb.rpc("andamento_confronto");
+    const ord = (righeConfronto||[]).slice().sort((a,b)=>a.mese_indice-b.mese_indice);
+    fatturatoMensile = ord.map(r=>Number(r.fatturato_a)||0);
+    saldoMensile = ord.map(r=>Number(r.saldo_a)||0);
+    fatturatoMensileB = ord.map(r=> r.fatturato_b===null ? null : Number(r.fatturato_b));
+    saldoMensileB = ord.map(r=> r.saldo_b===null ? null : Number(r.saldo_b));
+
+    const { data: confTot } = await sb.rpc("andamento_confronto_totali");
+    const righeTot = confTot||[];
+    const norm = r=>({
+      fatturato: Number(r?.fatturato)||0, incassato: Number(r?.incassato)||0,
+      daIncassare: Number(r?.da_incassare)||0, costi: Number(r?.costi)||0, utile: Number(r?.utile)||0,
+    });
+    confrontoBarre = {
+      annoA: annoScorso, annoB: annoCorrente,
+      finA: norm(righeTot.find(r=>r.anno===annoScorso)),
+      finB: norm(righeTot.find(r=>r.anno===annoCorrente)),
+    };
+  } else {
+    const { data: mensile } = await sb.rpc("andamento_mensile", { p_periodo: periodo });
+    const righe = mensile||[];
+    mesiLabels = righe.map(r=>{
+      const [y,m] = String(r.mese).slice(0,7).split("-").map(Number);
+      return new Date(y, m-1, 1).toLocaleDateString("it-IT", periodo==="rolling12" ? {month:"short",year:"2-digit"} : {month:"short"});
+    });
+    fatturatoMensile = righe.map(r=>Number(r.fatturato)||0);
+    saldoMensile = righe.map(r=>Number(r.saldo)||0);
   }
 
   state._andamentoCharts = {
@@ -585,34 +583,6 @@ async function viewAndamento(){
       </div>
     </div>
   `;
-}
-// Helper date/aggregazioni per la pagina Andamento --------------------------
-function ultimiMesi(n){
-  const out = [];
-  const now = new Date();
-  for(let i=n-1;i>=0;i--){
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    out.push({ key: d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"), label: d.toLocaleDateString("it-IT",{month:"short",year:"2-digit"}) });
-  }
-  return out;
-}
-function mesiDiAnno(anno, finoAMeseIndice){
-  const out = [];
-  for(let m=0;m<=finoAMeseIndice;m++){
-    out.push({ key: anno+"-"+String(m+1).padStart(2,"0"), label: new Date(anno,m,1).toLocaleDateString("it-IT",{month:"short"}) });
-  }
-  return out;
-}
-function meseDi(dataStr){ return dataStr? String(dataStr).slice(0,7) : null; }
-function somma(rows, filtro, valore){ return rows.filter(filtro).reduce((s,r)=>s+valore(r),0); }
-function filtraAnno(rows, campoData, anno){ return rows.filter(r=>r[campoData] && new Date(r[campoData]).getFullYear()===anno); }
-function calcolaFinanziari(fatture, movimenti){
-  const fatturato = somma(fatture, f=>f.tipo==="emessa", f=>Number(f.importo_totale));
-  const incassato = somma(fatture, f=>f.tipo==="emessa" && f.stato==="pagata", f=>Number(f.importo_totale));
-  const costi = somma(fatture, f=>f.tipo==="ricevuta", f=>Number(f.importo_totale));
-  const entrate = somma(movimenti, m=>m.tipo==="entrata", m=>Number(m.importo));
-  const uscite = somma(movimenti, m=>m.tipo==="uscita", m=>Number(m.importo));
-  return { fatturato, incassato, daIncassare: fatturato-incassato, costi, utile: fatturato-costi, entrate, uscite, saldo: entrate-uscite };
 }
 
 // Palette validata (categorica, ordine fisso): blu, arancio, verde acqua
@@ -942,7 +912,7 @@ function renderModaleDocumenti(entitaTipo, entitaId, titolo){
     <tbody>
       ${docs.length===0? `<tr><td colspan="3" class="empty">Nessun documento caricato.</td></tr>` : docs.map(doc=>`
         <tr>
-          <td><a href="${doc.url}" target="_blank" rel="noopener">${escapeHtml(doc.nome_file)}</a></td>
+          <td><a href="#" class="link-documento" data-path="${escapeHtml(doc.path||"")}">${escapeHtml(doc.nome_file)}</a></td>
           <td>${fmtDate(doc.created_at)}</td>
           <td>${ruolo==="admin"? `<button class="secondary btn-elimina-doc" data-id="${doc.id}">Elimina</button>` : ""}</td>
         </tr>
@@ -961,15 +931,26 @@ function renderModaleDocumenti(entitaTipo, entitaId, titolo){
       const path = `${entitaTipo}/${entitaId}/${Date.now()}_${file.name}`;
       const { error: upErr } = await sb.storage.from("documenti").upload(path, file);
       if(upErr){ msg.innerHTML = `<div class="msg error">Errore caricamento: ${escapeHtml(upErr.message)}</div>`; return; }
-      const { data: pub } = sb.storage.from("documenti").getPublicUrl(path);
+      // Il bucket "documenti" è privato: salviamo solo il percorso interno,
+      // il link per aprirlo viene generato al volo (valido un'ora) solo per chi ha accesso.
       const { error: insErr } = await sb.from("documenti").insert({
         entita_tipo: entitaTipo, entita_id: entitaId, nome_file: file.name,
-        url: pub.publicUrl, content_type: file.type || null, caricato_da: state.session.user.id,
+        path, content_type: file.type || null, caricato_da: state.session.user.id,
       });
       if(insErr){ msg.innerHTML = `<div class="msg error">Errore salvataggio: ${escapeHtml(insErr.message)}</div>`; return; }
       await loadAll();
       renderModaleDocumenti(entitaTipo, entitaId, titolo);
     };
+    bodyEl.querySelectorAll(".link-documento").forEach(a=>{
+      a.onclick = async (e)=>{
+        e.preventDefault();
+        const path = a.dataset.path;
+        if(!path){ alert("Documento non disponibile (caricato prima dell'aggiornamento di sicurezza)."); return; }
+        const { data, error } = await sb.storage.from("documenti").createSignedUrl(path, 3600);
+        if(error || !data){ alert("Errore apertura documento: "+(error?error.message:"")); return; }
+        window.open(data.signedUrl, "_blank", "noopener");
+      };
+    });
     bodyEl.querySelectorAll(".btn-elimina-doc").forEach(b=>{
       b.onclick = async ()=>{
         if(!confirm("Eliminare questo documento?")) return;
