@@ -6,6 +6,10 @@
 <title>Gestionale Aziendale</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
   :root{
     --primary:#1e5cb3; --primary-dark:#154585; --bg:#f4f6f9; --card:#ffffff;
@@ -95,11 +99,13 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
   session: null,
   view: "dashboard",
-  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [], documenti: [], attivitaCrm: [], commentiSO: [], messaggiInterni: [], notificheEventi: [], notificheLette: [] },
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [], documenti: [], attivitaCrm: [], commentiSO: [], messaggiInterni: [], notificheEventi: [], notificheLette: [], ddt: [], ddtRighe: [], logModifiche: [] },
   authMode: "login", // login | signup
   soAperto: null, // id service order aperto nel dettaglio
   preventivoAperto: null, // id preventivo aperto nel dettaglio
+  ddtAperto: null, // id ddt aperto nel dettaglio
   andamentoPeriodo: "rolling12", // rolling12 | annocorrente | annoscorso | confronto
+  filtroLogModifiche: "tutte",
 };
 
 const app = document.getElementById("app");
@@ -117,6 +123,169 @@ function badge(s){ return `<span class="badge ${s}">${statoLabel(s)}</span>`; }
 function fmtDate(d){ if(!d) return "-"; const dt=new Date(d); return dt.toLocaleDateString("it-IT")+" "+dt.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"}); }
 function escapeHtml(str){ if(str==null) return ""; return String(str).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function soNumero(n){ return n==null? "------" : String(n).padStart(6,"0"); }
+function ddtNumero(n){ return n==null? "------" : String(n).padStart(6,"0"); }
+
+// ============================================================
+// ESPORTAZIONI (CSV / Excel / PDF)
+// ============================================================
+function scaricaBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function exportCSV(filename, headers, rows){
+  const esc = v=>{ const s = v==null? "" : String(v); return /[",;\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const lines = [headers.map(esc).join(";"), ...rows.map(r=>r.map(esc).join(";"))];
+  scaricaBlob(new Blob(["﻿"+lines.join("\n")], {type:"text/csv;charset=utf-8;"}), filename+".csv");
+}
+function exportExcel(filename, headers, rows, sheetName){
+  if(typeof XLSX==="undefined"){ alert("La libreria per l'export Excel non si è ancora caricata: riprova tra qualche secondo."); return; }
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, (sheetName||"Foglio1").slice(0,31));
+  XLSX.writeFile(wb, filename+".xlsx");
+}
+function exportPDF(filename, title, headers, rows){
+  if(typeof window.jspdf==="undefined"){ alert("La libreria per l'export PDF non si è ancora caricata: riprova tra qualche secondo."); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: headers.length>5? "landscape" : "portrait" });
+  doc.setFontSize(14); doc.text(title, 14, 16);
+  doc.autoTable({ head:[headers], body: rows, startY: 22, styles:{ fontSize:8 } });
+  doc.save(filename+".pdf");
+}
+function exportButtonsHtml(idPrefix){
+  return `<div class="actions" style="margin-bottom:10px;">
+    <button type="button" class="secondary" id="${idPrefix}-csv">⬇️ CSV</button>
+    <button type="button" class="secondary" id="${idPrefix}-xlsx">⬇️ Excel</button>
+    <button type="button" class="secondary" id="${idPrefix}-pdf">⬇️ PDF</button>
+  </div>`;
+}
+function wireExportButtons(idPrefix, filename, title, headers, getRows){
+  const bC = document.getElementById(idPrefix+"-csv");
+  const bX = document.getElementById(idPrefix+"-xlsx");
+  const bP = document.getElementById(idPrefix+"-pdf");
+  if(bC) bC.onclick = ()=>exportCSV(filename, headers, getRows());
+  if(bX) bX.onclick = ()=>exportExcel(filename, headers, getRows(), title);
+  if(bP) bP.onclick = ()=>exportPDF(filename, title, headers, getRows());
+}
+
+// ============================================================
+// SCANSIONE QR / CODICI A BARRE DA FOTOCAMERA
+// ============================================================
+let _scannerStream = null;
+function fermaScanner(){
+  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream = null; }
+}
+function apriScannerQR(onRisultato){
+  const body = `
+    <video id="scanner-video" style="width:100%;border-radius:8px;background:#000;" playsinline muted autoplay></video>
+    <canvas id="scanner-canvas" style="display:none;"></canvas>
+    <p><small class="hint">Inquadra il codice QR o a barre stampato sul pezzo. Serve il permesso di usare la fotocamera.</small></p>
+    <div id="scanner-msg"></div>
+  `;
+  openModal("Scansiona codice", body, async (bodyEl)=>{
+    const video = bodyEl.querySelector("#scanner-video");
+    const canvas = bodyEl.querySelector("#scanner-canvas");
+    const ctx = canvas.getContext("2d");
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">Questo browser/dispositivo non supporta l'accesso alla fotocamera.</div>`;
+      return;
+    }
+    try{
+      _scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    } catch(err){
+      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">Impossibile accedere alla fotocamera: ${escapeHtml(err.message)}</div>`;
+      return;
+    }
+    video.srcObject = _scannerStream;
+    let attivo = true;
+    function ferma(){ attivo = false; fermaScanner(); }
+    function tick(){
+      if(!attivo) return;
+      if(video.readyState===video.HAVE_ENOUGH_DATA && typeof jsQR!=="undefined" && canvas.parentNode){
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        if(canvas.width>0 && canvas.height>0){
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height);
+          if(code && code.data){
+            ferma();
+            closeModal();
+            onRisultato(code.data.trim());
+            return;
+          }
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+// ============================================================
+// RICERCA GLOBALE
+// ============================================================
+function eseguiRicercaGlobale(query){
+  const q = (query||"").trim().toLowerCase();
+  if(q.length<2) return [];
+  const risultati = [];
+  state.data.clienti.forEach(c=>{
+    if([c.ragione_sociale,c.referente,c.email,c.telefono,c.piva].some(v=>v && String(v).toLowerCase().includes(q))){
+      risultati.push({ tipo:"Cliente", label: c.ragione_sociale, vai: ()=>{ state.view="clienti"; } });
+    }
+  });
+  state.data.cantieri.forEach(k=>{
+    if([k.nome,k.indirizzo,k.referente].some(v=>v && String(v).toLowerCase().includes(q))){
+      risultati.push({ tipo:"Cantiere", label: k.nome+" — "+clienteNome(k.cliente_id), vai: ()=>{ state.view="cantieri"; } });
+    }
+  });
+  state.data.pezzi.forEach(p=>{
+    if(p.dtr && p.dtr.toLowerCase().includes(q)){
+      risultati.push({ tipo:"Pezzo (DTR)", label: p.dtr+" — "+articoloLabel(p.articolo_id), vai: ()=>{ state.view="pezzi"; } });
+    }
+  });
+  state.data.articoli.forEach(a=>{
+    if([a.codice,a.descrizione].some(v=>v && String(v).toLowerCase().includes(q))){
+      risultati.push({ tipo:"Articolo", label: a.codice+" — "+a.descrizione, vai: ()=>{ state.view="magazzino"; } });
+    }
+  });
+  state.data.serviceOrders.forEach(s=>{
+    if(soNumero(s.numero).includes(q.replace(/\D/g,"")) && q.replace(/\D/g,"").length>0){
+      risultati.push({ tipo:"Service Order", label:"#"+soNumero(s.numero)+" — "+clienteNome(s.cliente_id), vai: ()=>{ state.view="serviceorder"; state.soAperto=s.id; } });
+    }
+  });
+  if(state.data.ddt) state.data.ddt.forEach(dd=>{
+    if(ddtNumero(dd.numero).includes(q.replace(/\D/g,"")) && q.replace(/\D/g,"").length>0){
+      risultati.push({ tipo:"DDT", label:"#"+ddtNumero(dd.numero)+" — "+clienteNome(dd.cliente_id), vai: ()=>{ state.view="ddt"; state.ddtAperto=dd.id; } });
+    }
+  });
+  return risultati.slice(0,30);
+}
+function apriRicercaGlobale(){
+  const body = `
+    <input type="text" id="ricerca-globale-input" placeholder="Cerca cliente, cantiere, DTR, articolo, Service Order, DDT..." autofocus>
+    <div id="ricerca-globale-risultati" style="margin-top:14px;"></div>
+  `;
+  openModal("Ricerca", body, (bodyEl)=>{
+    const input = bodyEl.querySelector("#ricerca-globale-input");
+    const risEl = bodyEl.querySelector("#ricerca-globale-risultati");
+    function aggiorna(){
+      const ris = eseguiRicercaGlobale(input.value);
+      if(input.value.trim().length<2){ risEl.innerHTML = `<div class="empty">Scrivi almeno 2 caratteri.</div>`; return; }
+      risEl.innerHTML = ris.length===0? `<div class="empty">Nessun risultato.</div>` : `
+        <table><tbody>
+        ${ris.map((r,i)=>`<tr><td><span class="badge in_uso">${escapeHtml(r.tipo)}</span></td><td>${escapeHtml(r.label)}</td><td><button class="secondary btn-vai-risultato" data-i="${i}">Apri</button></td></tr>`).join("")}
+        </tbody></table>`;
+      risEl.querySelectorAll(".btn-vai-risultato").forEach(b=>{
+        b.onclick = ()=>{ ris[Number(b.dataset.i)].vai(); closeModal(); render(); };
+      });
+    }
+    input.oninput = aggiorna;
+    aggiorna();
+  });
+}
 
 // ============================================================
 // MODALE GENERICO (usato per Modifica e per i Documenti)
@@ -133,6 +302,7 @@ function openModal(title, bodyHtml, onMount){
   if(onMount) onMount(document.getElementById("modal-body"));
 }
 function closeModal(){
+  fermaScanner();
   const bg = document.getElementById("modal-bg");
   if(bg) bg.remove();
 }
@@ -162,7 +332,10 @@ function apriNotifiche(){
         </tr>
       `).join("")}
     </tbody></table>
-    ${eventi.some(ev=>!lette.has(ev.id))? `<div class="actions" style="margin-top:14px;"><button id="btn-segna-tutte-lette">Segna tutte come lette</button></div>` : ""}
+    <div class="actions" style="margin-top:14px;">
+      ${eventi.some(ev=>!lette.has(ev.id))? `<button id="btn-segna-tutte-lette">Segna tutte come lette</button>` : ""}
+      ${myRole()==="admin" && eventi.length>0? `<button class="secondary" id="btn-pulisci-notifiche">🧹 Elimina notifiche più vecchie di 90 giorni</button>` : ""}
+    </div>
   `;
   openModal("Notifiche", body, (bodyEl)=>{
     bodyEl.querySelectorAll(".btn-segna-letta").forEach(b=>{
@@ -178,6 +351,15 @@ function apriNotifiche(){
       if(daSegnare.length>0) await sb.from("notifiche_lette").insert(daSegnare);
       closeModal();
       render();
+    };
+    const btnPulisci = bodyEl.querySelector("#btn-pulisci-notifiche");
+    if(btnPulisci) btnPulisci.onclick = async ()=>{
+      if(!confirm("Eliminare definitivamente le notifiche più vecchie di 90 giorni? L'operazione non è reversibile.")) return;
+      const cutoff = new Date(Date.now() - 90*24*60*60*1000).toISOString();
+      const { error } = await sb.from("notifiche_eventi").delete().lt("created_at", cutoff);
+      if(error){ alert("Errore: "+error.message); return; }
+      await loadAll();
+      apriNotifiche();
     };
   });
 }
@@ -213,7 +395,7 @@ async function handleLogout(){
 // CARICAMENTO DATI
 // ============================================================
 async function loadAll(){
-  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti, documenti, attivitaCrm, commentiSO, messaggiInterni, notificheEventi, notificheLette] = await Promise.all([
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti, documenti, attivitaCrm, commentiSO, messaggiInterni, notificheEventi, notificheLette, ddt, ddtRighe, logModifiche] = await Promise.all([
     sb.from("clienti").select("*").order("created_at",{ascending:false}),
     sb.from("cantieri").select("*").order("created_at",{ascending:false}),
     sb.from("articoli").select("*").order("created_at",{ascending:false}),
@@ -233,6 +415,9 @@ async function loadAll(){
     sb.from("messaggi_interni").select("*").order("created_at",{ascending:false}),
     sb.from("notifiche_eventi").select("*").order("created_at",{ascending:false}).limit(100),
     sb.from("notifiche_lette").select("*"),
+    sb.from("ddt").select("*").order("created_at",{ascending:false}),
+    sb.from("ddt_righe").select("*"),
+    sb.from("log_modifiche").select("*").order("created_at",{ascending:false}).limit(300),
   ]);
   state.data.clienti = clienti.data || [];
   state.data.cantieri = cantieri.data || [];
@@ -253,6 +438,9 @@ async function loadAll(){
   state.data.messaggiInterni = messaggiInterni.data || [];
   state.data.notificheEventi = notificheEventi.data || [];
   state.data.notificheLette = notificheLette.data || [];
+  state.data.ddt = ddt.data || [];
+  state.data.ddtRighe = ddtRighe.data || [];
+  state.data.logModifiche = logModifiche.data || [];
 }
 
 function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
@@ -303,6 +491,7 @@ async function render(){
     ["cantieri","Cantieri",isOperativo],
     ["magazzino","Magazzino",vedeMagazzino],
     ["pezzi","Pezzi (DTR)",vedeMagazzino],
+    ["ddt","DDT",vedeMagazzino],
     ["listino","Listino prezzi",vedePrezzi],
     ["preventivi","Preventivi",vedePrezzi],
     ["serviceorder","Service Order",vedeMagazzino],
@@ -311,6 +500,7 @@ async function render(){
     ["cassa","Cassa",vedeContabilita],
     ["messaggi","Messaggi",isOperativo],
     ["andamento","Andamento azienda",vedeAndamento],
+    ["registromodifiche","Registro modifiche",ruolo==="admin"],
     ["utenti","Utenti",ruolo==="admin"]];
   if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
 
@@ -320,6 +510,7 @@ async function render(){
     <header>
       <h1>Gestionale Aziendale</h1>
       <div class="user-box">
+        ${isOperativo? `<button class="secondary" id="btn-ricerca-globale">🔎 Cerca</button>` : ""}
         ${isOperativo? `<button class="secondary" id="btn-notifiche">🔔 Notifiche${nonLette>0? ` <span class="badge danneggiato">${nonLette}</span>` : ""}</button>` : ""}
         <span>${escapeHtml(state.session.user.email)} ${ruolo? `<span class="badge in_uso">${escapeHtml(ruoloLabel(ruolo))}</span>` : ""}</span>
         <button class="secondary" id="btn-logout">Esci</button>
@@ -331,6 +522,8 @@ async function render(){
   document.getElementById("btn-logout").onclick = handleLogout;
   const btnNotifiche = document.getElementById("btn-notifiche");
   if(btnNotifiche) btnNotifiche.onclick = apriNotifiche;
+  const btnRicerca = document.getElementById("btn-ricerca-globale");
+  if(btnRicerca) btnRicerca.onclick = apriRicercaGlobale;
   document.querySelectorAll("#main-nav button").forEach(b=>{
     b.onclick = ()=>{ state.view = b.dataset.view; state.soAperto=null; state.preventivoAperto=null; render(); };
   });
@@ -348,6 +541,8 @@ async function render(){
   if(state.view==="fatture") { main.innerHTML = viewFatture(); wireFatture(); }
   if(state.view==="cassa") { main.innerHTML = viewCassa(); wireCassa(); }
   if(state.view==="messaggi") { main.innerHTML = viewMessaggi(); wireMessaggi(); }
+  if(state.view==="ddt") { main.innerHTML = viewDDT(); wireDDT(); }
+  if(state.view==="registromodifiche") { main.innerHTML = viewRegistroModifiche(); wireRegistroModifiche(); }
   if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
   if(state.view==="andamento") { main.innerHTML = await viewAndamento(); wireAndamento(); }
 }
@@ -425,7 +620,10 @@ function valoreMagazzino(){
 function viewDashboard(){
   const d = state.data;
   const ruolo = myRole();
+  const oggi = new Date().toDateString();
   const soAperti = d.serviceOrders.filter(s=>s.stato==="aperto"||s.stato==="in_corso").length;
+  const soScaduti = d.serviceOrders.filter(s=>s.data_scadenza && new Date(s.data_scadenza) < new Date(oggi) && s.stato!=="chiuso" && s.stato!=="annullato").length;
+  const ddtDaChiudere = (d.ddt||[]).filter(dd=>dd.stato==="aperto").length;
   const fuoriMagazzino = d.pezzi.filter(p=>p.stato==="in_uso").length;
   const daRevisionare = d.pezzi.filter(p=>p.stato==="in_revisione"||p.stato==="da_riparare").length;
   const cantieriAttivi = d.cantieri.filter(c=>c.stato==="attivo").length;
@@ -445,6 +643,8 @@ function viewDashboard(){
       <div class="kpi"><div class="num">${fuoriMagazzino}</div><div class="lbl">Pezzi fuori magazzino</div></div>
       <div class="kpi"><div class="num">${daRevisionare}</div><div class="lbl">Da revisionare/riparare</div></div>
       <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
+      <div class="kpi"><div class="num">${soScaduti}</div><div class="lbl">Service Order scaduti</div></div>
+      <div class="kpi"><div class="num">${ddtDaChiudere}</div><div class="lbl">DDT da chiudere</div></div>
       ${vedePrezzi? `<div class="kpi"><div class="num">${preventiviAperti}</div><div class="lbl">Preventivi aperti</div></div>
       <div class="kpi"><div class="num">${fmtMoney(valoreMagazzino())}</div><div class="lbl">Valore magazzino (a listino)</div></div>` : ""}
       ${vedeContabilita? `
@@ -687,6 +887,7 @@ function viewClienti(){
     </div>`}
     <div class="card">
       <h2>Elenco clienti (${rows.length})</h2>
+      ${exportButtonsHtml("exp-clienti")}
       <div class="pill-select" id="filtro-crm-clienti">
         <button data-f="tutti" class="${filtro==="tutti"?"active":""}">Tutti</button>
         <button data-f="prospect" class="${filtro==="prospect"?"active":""}">Prospect</button>
@@ -719,6 +920,8 @@ function viewClienti(){
   `;
 }
 function wireClienti(){
+  const filtro = state.filtroClientiCrm || "tutti";
+  const rows = filtro==="tutti"? state.data.clienti : state.data.clienti.filter(c=>(c.stato_crm||"prospect")===filtro);
   const f = document.getElementById("form-cliente");
   if(f) f.onsubmit = async (e)=>{
     e.preventDefault();
@@ -740,6 +943,10 @@ function wireClienti(){
   document.querySelectorAll("#filtro-crm-clienti button").forEach(b=>{
     b.onclick = ()=>{ state.filtroClientiCrm = b.dataset.f; render(); };
   });
+  wireExportButtons("exp-clienti", "clienti", "Clienti",
+    ["Ragione sociale","Referente","Telefono","Email","Stato CRM","Commerciale","Cantieri"],
+    ()=>rows.map(c=>[c.ragione_sociale, c.referente||"", c.telefono||"", c.email||"", statoCrmLabel(c.stato_crm), nomeUtente(c.commerciale_assegnato), state.data.cantieri.filter(k=>k.cliente_id===c.id).length])
+  );
   document.querySelectorAll(".btn-edit-cliente").forEach(b=>{ b.onclick = ()=>editCliente(b.dataset.id); });
   document.querySelectorAll(".btn-crm-cliente").forEach(b=>{
     b.onclick = ()=>{
@@ -865,14 +1072,15 @@ function renderModaleCrm(clienteId, titolo){
       <label>Descrizione</label><textarea id="ac-descrizione" required placeholder="Cosa è successo, cosa è stato deciso..."></textarea>
       <div style="margin-top:10px;"><button type="submit">Aggiungi attività</button></div>
     </form>` : ""}
-    <table style="margin-top:14px;"><thead><tr><th>Data</th><th>Tipo</th><th>Descrizione</th><th>Di</th></tr></thead>
+    <table style="margin-top:14px;"><thead><tr><th>Data</th><th>Tipo</th><th>Descrizione</th><th>Di</th>${myRole()==="admin"?"<th></th>":""}</tr></thead>
     <tbody>
-      ${attivita.length===0? `<tr><td colspan="4" class="empty">Nessuna attività registrata.</td></tr>` : attivita.map(a=>`
+      ${attivita.length===0? `<tr><td colspan="5" class="empty">Nessuna attività registrata.</td></tr>` : attivita.map(a=>`
         <tr>
           <td>${fmtDate(a.data)}</td>
           <td>${escapeHtml(a.tipo)}</td>
           <td>${escapeHtml(a.descrizione)}</td>
           <td>${escapeHtml(nomeUtente(a.creato_da))}</td>
+          ${myRole()==="admin"? `<td><button class="secondary btn-elimina-attivita-crm" data-id="${a.id}" style="padding:2px 8px;font-size:11px;">Elimina</button></td>` : ""}
         </tr>
       `).join("")}
     </tbody></table>
@@ -890,6 +1098,15 @@ function renderModaleCrm(clienteId, titolo){
       await loadAll();
       renderModaleCrm(clienteId, titolo);
     };
+    bodyEl.querySelectorAll(".btn-elimina-attivita-crm").forEach(b=>{
+      b.onclick = async ()=>{
+        if(!confirm("Eliminare questa attività?")) return;
+        const { error } = await sb.from("attivita_crm").delete().eq("id", b.dataset.id);
+        if(error){ alert("Errore: "+error.message); return; }
+        await loadAll();
+        renderModaleCrm(clienteId, titolo);
+      };
+    });
   });
 }
 
@@ -991,6 +1208,7 @@ function viewCantieri(){
     </div>`}
     <div class="card">
       <h2>Elenco cantieri (${rows.length})</h2>
+      ${exportButtonsHtml("exp-cantieri")}
       ${rows.length===0? `<div class="empty">Nessun cantiere inserito.</div>` : `
       <table><thead><tr><th>Nome</th><th>Cliente</th><th>Indirizzo</th><th>Referente</th><th>Stato</th><th>Pezzi presenti</th><th></th></tr></thead>
       <tbody>
@@ -1035,6 +1253,10 @@ function wireCantieri(){
       renderModaleDocumenti("cantiere", b.dataset.id, "Documenti — "+(k? k.nome : ""));
     };
   });
+  wireExportButtons("exp-cantieri", "cantieri", "Cantieri",
+    ["Nome","Cliente","Indirizzo","Referente","Stato","Pezzi presenti"],
+    ()=>state.data.cantieri.map(k=>[k.nome, clienteNome(k.cliente_id), k.indirizzo||"", k.referente||"", statoLabel(k.stato), state.data.pezzi.filter(p=>p.cantiere_id===k.id).length])
+  );
 }
 function editCantiere(id){
   const k = state.data.cantieri.find(x=>x.id===id);
@@ -1091,6 +1313,7 @@ function editCantiere(id){
 function viewMagazzino(){
   const rows = state.data.articoli;
   const puoModificare = ["magazzino","admin"].includes(myRole());
+  const articoliConLunghezza = rows.filter(a=>a.lunghezza_unitaria>0);
   return `
     ${!puoModificare? "" : `
     <div class="card">
@@ -1101,6 +1324,7 @@ function viewMagazzino(){
           <div><label>Descrizione *</label><input required id="a-descrizione"></div>
           <div><label>Dimensioni</label><input id="a-dimensioni" placeholder="es. 5m x 10cm"></div>
           <div><label>Peso</label><input id="a-peso" placeholder="es. 2.5 kg"></div>
+          <div><label>Lunghezza per pezzo (m)</label><input type="number" step="0.01" min="0" id="a-lunghezza" placeholder="es. 3 (solo per articoli lineari)"></div>
           <div><label>URL immagine</label><input id="a-immagine" placeholder="https://..."></div>
         </div>
         <label>Note</label><textarea id="a-note"></textarea>
@@ -1109,13 +1333,15 @@ function viewMagazzino(){
     </div>`}
     <div class="card">
       <h2>Catalogo articoli (${rows.length})</h2>
+      ${exportButtonsHtml("exp-articoli")}
       ${rows.length===0? `<div class="empty">Nessun articolo inserito.</div>` : `
-      <table><thead><tr><th>Codice</th><th>Descrizione</th><th>Dimensioni</th><th>Peso</th><th>Pezzi totali</th><th>Disponibili</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <table><thead><tr><th>Foto</th><th>Codice</th><th>Descrizione</th><th>Dimensioni</th><th>Peso</th><th>Pezzi totali</th><th>Disponibili</th>${puoModificare?"<th></th>":""}</tr></thead>
       <tbody>
         ${rows.map(a=>{
           const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
           const disp = pezziArt.filter(p=>p.stato==="disponibile").length;
           return `<tr>
+            <td>${a.immagine_url? `<img src="${escapeHtml(a.immagine_url)}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border);" onerror="this.style.display='none';">` : `<span class="hint">-</span>`}</td>
             <td>${escapeHtml(a.codice)}</td>
             <td>${escapeHtml(a.descrizione)}</td>
             <td>${escapeHtml(a.dimensioni||"-")}</td>
@@ -1126,6 +1352,16 @@ function viewMagazzino(){
           </tr>`;
         }).join("")}
       </tbody></table>`}
+    </div>
+    <div class="card">
+      <h2>Calcolo pezzi per metratura</h2>
+      <p><small class="hint">Solo per gli articoli a cui è stata indicata una "Lunghezza per pezzo": dice quanti pezzi servono per raggiungere la metratura richiesta.</small></p>
+      ${articoliConLunghezza.length===0? `<div class="empty">Nessun articolo ha ancora una lunghezza per pezzo impostata. Aggiungila modificando un articolo lineare (es. profili, tubi, pannelli a barra).</div>` : `
+      <div class="form-grid">
+        <div><label>Articolo</label><select id="mt-articolo">${articoliConLunghezza.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)} (${a.lunghezza_unitaria} m/pezzo)</option>`).join("")}</select></div>
+        <div><label>Metratura richiesta (m)</label><input type="number" step="0.01" min="0" id="mt-richiesta" value="1"></div>
+      </div>
+      <div id="mt-risultato" class="msg ok" style="margin-top:6px;"></div>`}
     </div>
   `;
 }
@@ -1138,6 +1374,7 @@ function wireMagazzino(){
       descrizione: document.getElementById("a-descrizione").value.trim(),
       dimensioni: document.getElementById("a-dimensioni").value.trim() || null,
       peso: document.getElementById("a-peso").value.trim() || null,
+      lunghezza_unitaria: document.getElementById("a-lunghezza").value.trim()? Number(document.getElementById("a-lunghezza").value) : null,
       immagine_url: document.getElementById("a-immagine").value.trim() || null,
       note: document.getElementById("a-note").value.trim() || null,
     };
@@ -1146,6 +1383,27 @@ function wireMagazzino(){
     render();
   };
   document.querySelectorAll(".btn-edit-articolo").forEach(b=>{ b.onclick = ()=>editArticolo(b.dataset.id); });
+  wireExportButtons("exp-articoli", "magazzino", "Magazzino",
+    ["Codice","Descrizione","Dimensioni","Peso","Pezzi totali","Disponibili"],
+    ()=>state.data.articoli.map(a=>{
+      const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
+      return [a.codice, a.descrizione, a.dimensioni||"", a.peso||"", pezziArt.length, pezziArt.filter(p=>p.stato==="disponibile").length];
+    })
+  );
+  const selMt = document.getElementById("mt-articolo");
+  const inputMt = document.getElementById("mt-richiesta");
+  const risMt = document.getElementById("mt-risultato");
+  function aggiornaMetratura(){
+    if(!selMt || !risMt) return;
+    const a = state.data.articoli.find(x=>x.id===selMt.value);
+    const richiesta = Number(inputMt.value)||0;
+    if(!a || !a.lunghezza_unitaria){ risMt.textContent = "-"; return; }
+    const pezziNecessari = Math.ceil(richiesta / a.lunghezza_unitaria);
+    const disponibili = state.data.pezzi.filter(p=>p.articolo_id===a.id && p.stato==="disponibile").length;
+    risMt.className = "msg " + (pezziNecessari<=disponibili? "ok" : "error");
+    risMt.textContent = `Servono ${pezziNecessari} pezzi da ${a.lunghezza_unitaria} m (totale ${(pezziNecessari*a.lunghezza_unitaria).toFixed(2)} m). Disponibili in magazzino: ${disponibili}.` + (pezziNecessari>disponibili? " Attenzione: non ce ne sono abbastanza in magazzino." : "");
+  }
+  if(selMt){ selMt.onchange = aggiornaMetratura; inputMt.oninput = aggiornaMetratura; aggiornaMetratura(); }
 }
 function editArticolo(id){
   const a = state.data.articoli.find(x=>x.id===id);
@@ -1157,8 +1415,10 @@ function editArticolo(id){
         <div><label>Descrizione *</label><input required id="ea-descrizione" value="${escapeHtml(a.descrizione)}"></div>
         <div><label>Dimensioni</label><input id="ea-dimensioni" value="${escapeHtml(a.dimensioni||"")}"></div>
         <div><label>Peso</label><input id="ea-peso" value="${escapeHtml(a.peso||"")}"></div>
+        <div><label>Lunghezza per pezzo (m)</label><input type="number" step="0.01" min="0" id="ea-lunghezza" value="${a.lunghezza_unitaria!=null?a.lunghezza_unitaria:""}" placeholder="solo per articoli lineari"></div>
         <div><label>URL immagine</label><input id="ea-immagine" value="${escapeHtml(a.immagine_url||"")}"></div>
       </div>
+      ${a.immagine_url? `<img src="${escapeHtml(a.immagine_url)}" alt="" style="max-width:120px;max-height:120px;border-radius:8px;border:1px solid var(--border);margin-top:6px;" onerror="this.style.display='none';">` : ""}
       <label>Note</label><textarea id="ea-note">${escapeHtml(a.note||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
         <button type="submit">Salva modifiche</button>
@@ -1178,6 +1438,7 @@ function editArticolo(id){
         descrizione: bodyEl.querySelector("#ea-descrizione").value.trim(),
         dimensioni: bodyEl.querySelector("#ea-dimensioni").value.trim() || null,
         peso: bodyEl.querySelector("#ea-peso").value.trim() || null,
+        lunghezza_unitaria: bodyEl.querySelector("#ea-lunghezza").value.trim()? Number(bodyEl.querySelector("#ea-lunghezza").value) : null,
         immagine_url: bodyEl.querySelector("#ea-immagine").value.trim() || null,
         note: bodyEl.querySelector("#ea-note").value.trim() || null,
       };
@@ -1204,7 +1465,12 @@ function viewPezzi(){
       <form id="form-pezzo">
         <div class="form-grid">
           <div><label>Articolo *</label><select required id="p-articolo">${articoliOpts}</select></div>
-          <div><label>DTR (codice univoco) *</label><input required id="p-dtr" placeholder="es. DTR-000123"></div>
+          <div><label>DTR (codice univoco) *</label>
+            <div style="display:flex;gap:6px;">
+              <input required id="p-dtr" placeholder="es. DTR-000123" style="flex:1;">
+              <button type="button" class="secondary" id="btn-scan-dtr">📷</button>
+            </div>
+          </div>
           <div><label>Posizione in magazzino</label><input id="p-posizione" placeholder="es. Scaffale A3"></div>
         </div>
         <div style="margin-top:10px;"><button type="submit">Salva pezzo</button></div>
@@ -1259,6 +1525,10 @@ function wirePezzi(){
     const { error } = await sb.from("pezzi").insert(payload);
     if(error){ alert("Errore: "+error.message); return; }
     render();
+  };
+  const btnScanDtr = document.getElementById("btn-scan-dtr");
+  if(btnScanDtr) btnScanDtr.onclick = ()=>{
+    apriScannerQR((testo)=>{ document.getElementById("p-dtr").value = testo; });
   };
   renderTabellaPezzi("tutti");
   document.querySelectorAll("#filtro-stato button").forEach(b=>{
@@ -1333,6 +1603,7 @@ function viewServiceOrder(){
         <div class="form-grid">
           <div><label>Cliente *</label><select required id="so-cliente">${clientiOpts}</select></div>
           <div><label>Cantiere</label><select id="so-cantiere"><option value="">-- nessuno --</option></select></div>
+          <div><label>Scadenza prevista</label><input type="date" id="so-scadenza"></div>
         </div>
         <label>Note</label><textarea id="so-note"></textarea>
         <div style="margin-top:10px;"><button type="submit">Crea Service Order</button></div>
@@ -1377,6 +1648,7 @@ function wireServiceOrder(){
     const payload = {
       cliente_id: selCliente.value,
       cantiere_id: selCantiere.value || null,
+      data_scadenza: document.getElementById("so-scadenza").value || null,
       note: document.getElementById("so-note").value.trim() || null,
       stato: "aperto",
       created_by: state.session.user.id,
@@ -1405,6 +1677,11 @@ function viewServiceOrderDettaglio(id){
       <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(so.cliente_id))} &nbsp;
          <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(so.cantiere_id))} &nbsp;
          <strong>Aperto il:</strong> ${fmtDate(so.data_apertura)}</p>
+      <p>
+        <strong>Scadenza prevista:</strong>
+        <input type="date" id="so-scadenza-edit" value="${so.data_scadenza||""}" style="display:inline-block;width:auto;">
+        ${so.data_scadenza && new Date(so.data_scadenza) < new Date(new Date().toDateString()) && so.stato!=="chiuso" && so.stato!=="annullato"? `<span class="badge danneggiato">Scaduto</span>` : ""}
+      </p>
       ${so.note? `<p><em>${escapeHtml(so.note)}</em></p>` : ""}
       <div class="actions">
         ${so.stato!=="chiuso" && so.stato!=="annullato" ? `<button class="secondary" id="btn-chiudi-so">Chiudi Service Order</button>` : ""}
@@ -1419,9 +1696,14 @@ function viewServiceOrderDettaglio(id){
       ${pezziDisponibili.length===0? `<div class="empty">Nessun pezzo disponibile in magazzino.</div>` : `
       <form id="form-prelievo">
         <div class="form-grid">
-          <div><label>Pezzo (DTR) disponibile</label><select required id="pr-pezzo">${optsDisponibili}</select></div>
+          <div><label>Pezzo (DTR) disponibile</label>
+            <div style="display:flex;gap:6px;">
+              <select required id="pr-pezzo" style="flex:1;">${optsDisponibili}</select>
+              <button type="button" class="secondary" id="btn-scan-prelievo">📷 Scansiona</button>
+            </div>
+          </div>
         </div>
-        <button type="submit">Preleva (scansione DTR)</button>
+        <button type="submit">Preleva</button>
       </form>`}
     </div>
 
@@ -1430,7 +1712,12 @@ function viewServiceOrderDettaglio(id){
       ${pezziQui.length===0? `<div class="empty">Nessun pezzo attualmente presso questo cliente/cantiere.</div>` : `
       <form id="form-reso">
         <div class="form-grid">
-          <div><label>Pezzo (DTR) da restituire</label><select required id="re-pezzo">${optsQui}</select></div>
+          <div><label>Pezzo (DTR) da restituire</label>
+            <div style="display:flex;gap:6px;">
+              <select required id="re-pezzo" style="flex:1;">${optsQui}</select>
+              <button type="button" class="secondary" id="btn-scan-reso">📷 Scansiona</button>
+            </div>
+          </div>
           <div><label>Nuovo stato del pezzo</label>
             <select id="re-stato">
               <option value="disponibile">Disponibile</option>
@@ -1469,12 +1756,19 @@ function renderCommentiSO(id){
   const html = commenti.length===0? `<div class="empty">Nessun commento ancora.</div>` : commenti.map(c=>{
     const autore = state.data.profiles.find(p=>p.id===c.creato_da);
     return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
-      <div style="font-size:12px;color:var(--muted);">${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(c.created_at)}</div>
+      <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
+        <span>${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(c.created_at)}</span>
+        ${myRole()==="admin"? `<button class="secondary btn-elimina-commento-so" data-id="${c.id}" style="padding:2px 8px;font-size:11px;">Elimina</button>` : ""}
+      </div>
       <div>${escapeHtml(c.testo)}</div>
     </div>`;
   }).join("");
   const el = document.getElementById("lista-commenti-so");
-  if(el) el.innerHTML = html;
+  if(!el) return;
+  el.innerHTML = html;
+  el.querySelectorAll(".btn-elimina-commento-so").forEach(b=>{
+    b.onclick = ()=>confirmDelete("commenti_service_order", b.dataset.id, "questo commento");
+  });
 }
 function wireServiceOrderDettaglio(id){
   document.getElementById("btn-torna-so").onclick = ()=>{ state.soAperto=null; render(); };
@@ -1504,6 +1798,25 @@ function wireServiceOrderDettaglio(id){
   };
   const btnEliminaSo = document.getElementById("btn-elimina-so");
   if(btnEliminaSo) btnEliminaSo.onclick = ()=>confirmDelete("service_orders", id, `il Service Order #${soNumero(so.numero)}`, ()=>{ state.soAperto=null; });
+  const inputScadenza = document.getElementById("so-scadenza-edit");
+  if(inputScadenza) inputScadenza.onchange = async ()=>{
+    const { error } = await sb.from("service_orders").update({ data_scadenza: inputScadenza.value || null }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  function scansionaESeleziona(selectId){
+    apriScannerQR((testo)=>{
+      const sel = document.getElementById(selectId);
+      if(!sel) return;
+      const opt = Array.from(sel.options).find(o=>o.textContent.toLowerCase().includes(testo.toLowerCase()));
+      if(opt) sel.value = opt.value;
+      else alert("Nessun pezzo trovato in elenco con il codice: "+testo);
+    });
+  }
+  const btnScanPrelievo = document.getElementById("btn-scan-prelievo");
+  if(btnScanPrelievo) btnScanPrelievo.onclick = ()=>scansionaESeleziona("pr-pezzo");
+  const btnScanReso = document.getElementById("btn-scan-reso");
+  if(btnScanReso) btnScanReso.onclick = ()=>scansionaESeleziona("re-pezzo");
   const fPrelievo = document.getElementById("form-prelievo");
   if(fPrelievo) fPrelievo.onsubmit = async (e)=>{
     e.preventDefault();
@@ -2002,6 +2315,7 @@ function viewFatture(){
     </div>
     <div class="card">
       <h2>Elenco fatture (${rows.length})</h2>
+      ${exportButtonsHtml("exp-fatture")}
       ${rows.length===0? `<div class="empty">Nessuna fattura inserita.</div>` : `
       <table><thead><tr><th>Numero</th><th>Tipo</th><th>Cliente/Fornitore</th><th>Emissione</th><th>Scadenza</th><th>Totale</th><th>Stato</th><th></th></tr></thead>
       <tbody>
@@ -2118,6 +2432,10 @@ function wireFatture(){
     };
   });
   document.querySelectorAll(".btn-edit-fattura").forEach(b=>{ b.onclick = ()=>editFattura(b.dataset.id); });
+  wireExportButtons("exp-fatture", "fatture", "Fatture",
+    ["Numero","Tipo","Cliente/Fornitore","Emissione","Scadenza","Totale","Stato"],
+    ()=>state.data.fatture.map(f=>[f.numero, f.tipo==="emessa"?"Emessa":"Ricevuta", f.tipo==="emessa"?clienteNome(f.cliente_id):fornitoreNome(f.fornitore_id), fmtDateOnly(f.data_emissione), fmtDateOnly(f.data_scadenza), Number(f.importo_totale).toFixed(2), statoFatturaLabel(statoFatturaEffettivo(f))])
+  );
 }
 
 // ============================================================
@@ -2149,6 +2467,7 @@ function viewCassa(){
     </div>
     <div class="card">
       <h2>Movimenti (${rows.length})</h2>
+      ${exportButtonsHtml("exp-cassa")}
       ${rows.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
       <table><thead><tr><th>Data</th><th>Tipo</th><th>Metodo</th><th>Importo</th><th>Descrizione</th><th></th></tr></thead>
       <tbody>
@@ -2183,6 +2502,10 @@ function wireCassa(){
     render();
   };
   document.querySelectorAll(".btn-edit-movimento").forEach(b=>{ b.onclick = ()=>editMovimento(b.dataset.id); });
+  wireExportButtons("exp-cassa", "movimenti_cassa", "Movimenti di cassa",
+    ["Data","Tipo","Metodo","Importo","Descrizione"],
+    ()=>state.data.movimenti.map(m=>[fmtDateOnly(m.data), m.tipo==='entrata'?'Entrata':'Uscita', m.metodo==='banca'?'Banca':'Cassa', Number(m.importo).toFixed(2), m.descrizione||""])
+  );
 }
 function editMovimento(id){
   const m = state.data.movimenti.find(x=>x.id===id);
@@ -2242,7 +2565,10 @@ function viewMessaggi(){
       ${rows.length===0? `<div class="empty">Nessun messaggio ancora.</div>` : rows.map(m=>{
         const autore = state.data.profiles.find(p=>p.id===m.creato_da);
         return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
-          <div style="font-size:12px;color:var(--muted);">${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(m.created_at)}</div>
+          <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
+            <span>${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(m.created_at)}</span>
+            ${myRole()==="admin"? `<button class="secondary btn-elimina-messaggio" data-id="${m.id}" style="padding:2px 8px;font-size:11px;">Elimina</button>` : ""}
+          </div>
           <div>${escapeHtml(m.testo)}</div>
         </div>`;
       }).join("")}
@@ -2251,8 +2577,7 @@ function viewMessaggi(){
 }
 function wireMessaggi(){
   const f = document.getElementById("form-messaggio");
-  if(!f) return;
-  f.onsubmit = async (e)=>{
+  if(f) f.onsubmit = async (e)=>{
     e.preventDefault();
     const testo = document.getElementById("msg-testo").value.trim();
     if(!testo) return;
@@ -2260,6 +2585,252 @@ function wireMessaggi(){
     if(error){ alert("Errore: "+error.message); return; }
     render();
   };
+  document.querySelectorAll(".btn-elimina-messaggio").forEach(b=>{
+    b.onclick = ()=>confirmDelete("messaggi_interni", b.dataset.id, "questo messaggio");
+  });
+}
+
+// ============================================================
+// DDT (documenti di trasporto)
+// ============================================================
+function viewDDT(){
+  if(state.ddtAperto) return viewDDTDettaglio(state.ddtAperto);
+  const rows = state.data.ddt;
+  const puoCreare = ["magazzino","commerciale","admin"].includes(myRole());
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    ${!puoCreare? "" : `
+    <div class="card">
+      <h2>Nuovo DDT</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-ddt">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="ddt-cliente">${clientiOpts}</select></div>
+          <div><label>Cantiere</label><select id="ddt-cantiere"><option value="">-- nessuno --</option></select></div>
+          <div><label>Causale del trasporto</label><input id="ddt-causale" placeholder="es. Vendita, Conto lavoro, Reso..."></div>
+        </div>
+        <label>Note</label><textarea id="ddt-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Crea DDT</button></div>
+      </form>`}
+    </div>`}
+    <div class="card">
+      <h2>Elenco DDT (${rows.length})</h2>
+      ${exportButtonsHtml("exp-ddt")}
+      ${rows.length===0? `<div class="empty">Nessun DDT creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Causale</th><th>Stato</th><th>Apertura</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(dd=>`
+          <tr>
+            <td>#${ddtNumero(dd.numero)}</td>
+            <td>${escapeHtml(clienteNome(dd.cliente_id))}</td>
+            <td>${escapeHtml(cantiereNome(dd.cantiere_id))}</td>
+            <td>${escapeHtml(dd.causale||"-")}</td>
+            <td>${badge(dd.stato)}</td>
+            <td>${fmtDate(dd.data_apertura)}</td>
+            <td><button class="secondary btn-apri-ddt" data-id="${dd.id}">Apri</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireDDT(){
+  if(state.ddtAperto){ wireDDTDettaglio(state.ddtAperto); return; }
+  const selCliente = document.getElementById("ddt-cliente");
+  const selCantiere = document.getElementById("ddt-cantiere");
+  function aggiornaCantieri(){
+    if(!selCliente) return;
+    const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
+      .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
+    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+  }
+  if(selCliente){ aggiornaCantieri(); selCliente.onchange = aggiornaCantieri; }
+  const f = document.getElementById("form-ddt");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: selCliente.value,
+      cantiere_id: selCantiere.value || null,
+      causale: document.getElementById("ddt-causale").value.trim() || null,
+      note: document.getElementById("ddt-note").value.trim() || null,
+      stato: "aperto",
+      creato_da: state.session.user.id,
+    };
+    const { error } = await sb.from("ddt").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-apri-ddt").forEach(b=>{ b.onclick = ()=>{ state.ddtAperto = b.dataset.id; render(); }; });
+  wireExportButtons("exp-ddt", "ddt", "DDT",
+    ["Numero","Cliente","Cantiere","Causale","Stato","Apertura","Chiusura","Note"],
+    ()=>state.data.ddt.map(dd=>[ddtNumero(dd.numero), clienteNome(dd.cliente_id), cantiereNome(dd.cantiere_id), dd.causale||"", statoLabel(dd.stato), fmtDate(dd.data_apertura), dd.data_chiusura? fmtDate(dd.data_chiusura):"", dd.note||""])
+  );
+}
+function viewDDTDettaglio(id){
+  const dd = state.data.ddt.find(x=>x.id===id);
+  if(!dd){ state.ddtAperto=null; return viewDDT(); }
+  const righe = state.data.ddtRighe.filter(r=>r.ddt_id===id);
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  const puoModificare = ["magazzino","commerciale","admin"].includes(myRole()) && dd.stato==="aperto";
+  return `
+    <button class="secondary" id="btn-torna-ddt">&larr; Torna all'elenco</button>
+    <div class="card" style="margin-top:14px;">
+      <h2>DDT #${ddtNumero(dd.numero)} ${badge(dd.stato)}</h2>
+      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(dd.cliente_id))} &nbsp;
+         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(dd.cantiere_id))} &nbsp;
+         <strong>Aperto il:</strong> ${fmtDate(dd.data_apertura)}
+         ${dd.data_chiusura? ` &nbsp; <strong>Chiuso il:</strong> ${fmtDate(dd.data_chiusura)}` : ""}</p>
+      ${dd.causale? `<p><strong>Causale:</strong> ${escapeHtml(dd.causale)}</p>` : ""}
+      ${dd.note? `<p><em>${escapeHtml(dd.note)}</em></p>` : ""}
+      <div class="actions">
+        <button class="secondary" id="btn-stampa-ddt">🖨️ Stampa DDT</button>
+        ${dd.stato==="aperto"? `<button class="secondary" id="btn-chiudi-ddt">Chiudi DDT</button>` : ""}
+        ${dd.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-ddt">Riapri DDT</button>` : ""}
+        ${dd.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">Solo l'amministratore può riaprire un DDT chiuso.</small>` : ""}
+        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-ddt">Elimina DDT</button>` : ""}
+      </div>
+    </div>
+    <div class="card">
+      <h2>Righe di carico</h2>
+      ${puoModificare? `
+      <form id="form-riga-ddt">
+        <div class="form-grid">
+          <div><label>Articolo</label><select id="rd-articolo">${articoliOpts}</select></div>
+          <div><label>Descrizione (facoltativa, es. per merce non a catalogo)</label><input id="rd-descrizione"></div>
+          <div><label>Quantità *</label><input required type="number" step="0.01" min="0.01" id="rd-quantita" value="1"></div>
+        </div>
+        <div style="margin-top:10px;"><button type="submit">Aggiungi riga</button></div>
+      </form>` : ""}
+      <table style="margin-top:14px;"><thead><tr><th>Articolo</th><th>Descrizione</th><th style="text-align:right;">Quantità</th></tr></thead>
+      <tbody>
+        ${righe.length===0? `<tr><td colspan="3" class="empty">Nessuna riga di carico.</td></tr>` : righe.map(r=>`
+          <tr><td>${r.articolo_id? escapeHtml(articoloLabel(r.articolo_id)) : "-"}</td><td>${escapeHtml(r.descrizione||"-")}</td><td style="text-align:right;">${r.quantita}</td></tr>
+        `).join("")}
+      </tbody></table>
+    </div>
+  `;
+}
+function wireDDTDettaglio(id){
+  document.getElementById("btn-torna-ddt").onclick = ()=>{ state.ddtAperto=null; render(); };
+  const dd = state.data.ddt.find(x=>x.id===id);
+  document.getElementById("btn-stampa-ddt").onclick = ()=>stampaDDT(id);
+  const btnChiudi = document.getElementById("btn-chiudi-ddt");
+  if(btnChiudi) btnChiudi.onclick = async ()=>{
+    const { error } = await sb.from("ddt").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnRiapri = document.getElementById("btn-riapri-ddt");
+  if(btnRiapri) btnRiapri.onclick = async ()=>{
+    if(!confirm("Riaprire questo DDT?")) return;
+    const { error } = await sb.from("ddt").update({ stato:"aperto", data_chiusura: null }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnElimina = document.getElementById("btn-elimina-ddt");
+  if(btnElimina) btnElimina.onclick = ()=>confirmDelete("ddt", id, `il DDT #${ddtNumero(dd.numero)}`, ()=>{ state.ddtAperto=null; });
+  const fRiga = document.getElementById("form-riga-ddt");
+  if(fRiga) fRiga.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      ddt_id: id,
+      articolo_id: document.getElementById("rd-articolo").value || null,
+      descrizione: document.getElementById("rd-descrizione").value.trim() || null,
+      quantita: Number(document.getElementById("rd-quantita").value),
+    };
+    const { error } = await sb.from("ddt_righe").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+}
+function stampaDDT(id){
+  const dd = state.data.ddt.find(x=>x.id===id);
+  if(!dd) return;
+  const righe = state.data.ddtRighe.filter(r=>r.ddt_id===id);
+  const cliente = state.data.clienti.find(c=>c.id===dd.cliente_id) || {};
+  const righeHtml = righe.map(r=>`
+    <tr><td>${r.articolo_id? escapeHtml(articoloLabel(r.articolo_id)) : "-"}</td><td>${escapeHtml(r.descrizione||"-")}</td><td style="text-align:right;">${r.quantita}</td></tr>`).join("");
+  const html = `<!DOCTYPE html>
+<html lang="it"><head><meta charset="UTF-8"><title>DDT #${ddtNumero(dd.numero)}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#1c2530;margin:40px;}
+  h1{font-size:22px;margin-bottom:0;}
+  .sub{color:#66707d;margin-top:4px;margin-bottom:28px;}
+  table{width:100%;border-collapse:collapse;margin-top:16px;}
+  th,td{padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px;text-align:left;}
+  th{background:#f4f6f9;}
+  .box{border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:20px;}
+  @media print{ button{display:none;} }
+</style></head>
+<body>
+  <h1>Documento di Trasporto #${ddtNumero(dd.numero)}</h1>
+  <p class="sub">Data apertura: ${fmtDate(dd.data_apertura)}${dd.data_chiusura? " — Chiuso il: "+fmtDate(dd.data_chiusura) : ""}</p>
+  <div class="box">
+    <strong>Cliente:</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
+    ${cliente.indirizzo? `Indirizzo: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
+    ${cliente.piva? `P.IVA: ${escapeHtml(cliente.piva)}<br>` : ""}
+    ${dd.cantiere_id? `Cantiere: ${escapeHtml(cantiereNome(dd.cantiere_id))}<br>` : ""}
+    ${dd.causale? `Causale: ${escapeHtml(dd.causale)}<br>` : ""}
+  </div>
+  ${dd.note? `<p><em>${escapeHtml(dd.note)}</em></p>` : ""}
+  <table>
+    <thead><tr><th>Articolo</th><th>Descrizione</th><th style="text-align:right;">Quantità</th></tr></thead>
+    <tbody>${righeHtml}</tbody>
+  </table>
+  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">Stampa questa pagina</button>
+</body></html>`;
+  const w = window.open("", "_blank");
+  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ============================================================
+// REGISTRO MODIFICHE (solo admin)
+// ============================================================
+function nomeTabella(t){
+  const map = { clienti:"Cliente", cantieri:"Cantiere", pezzi:"Pezzo (DTR)", articoli:"Articolo", service_orders:"Service Order", preventivi:"Preventivo", fatture:"Fattura", ddt:"DDT" };
+  return map[t] || t;
+}
+function viewRegistroModifiche(){
+  const filtro = state.filtroLogModifiche || "tutte";
+  let rows = state.data.logModifiche;
+  if(filtro!=="tutte") rows = rows.filter(l=>l.tabella===filtro);
+  const tabelle = ["clienti","cantieri","pezzi","articoli","service_orders","preventivi","fatture","ddt"];
+  return `
+    <div class="card">
+      <h2>Registro storico delle modifiche</h2>
+      <p><small class="hint">Ogni riga mostra un campo cambiato: chi lo ha modificato, quando, il valore prima e dopo. Visibile solo all'amministratore.</small></p>
+      <div class="pill-select" id="filtro-log">
+        <button data-f="tutte" class="${filtro==="tutte"?"active":""}">Tutte</button>
+        ${tabelle.map(t=>`<button data-f="${t}" class="${filtro===t?"active":""}">${nomeTabella(t)}</button>`).join("")}
+      </div>
+      ${exportButtonsHtml("exp-log")}
+      ${rows.length===0? `<div class="empty">Nessuna modifica registrata.</div>` : `
+      <table><thead><tr><th>Quando</th><th>Tabella</th><th>Campo</th><th>Prima</th><th>Dopo</th><th>Utente</th></tr></thead>
+      <tbody>
+        ${rows.map(l=>`
+          <tr>
+            <td>${fmtDate(l.created_at)}</td>
+            <td>${escapeHtml(nomeTabella(l.tabella))}</td>
+            <td>${escapeHtml(l.campo||"-")}</td>
+            <td>${escapeHtml(l.valore_prima==null?"-":String(l.valore_prima).slice(0,60))}</td>
+            <td>${escapeHtml(l.valore_dopo==null?"-":String(l.valore_dopo).slice(0,60))}</td>
+            <td>${escapeHtml(nomeUtente(l.utente_id))}</td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireRegistroModifiche(){
+  document.querySelectorAll("#filtro-log button").forEach(b=>{
+    b.onclick = ()=>{ state.filtroLogModifiche = b.dataset.f; render(); };
+  });
+  const rows = state.filtroLogModifiche && state.filtroLogModifiche!=="tutte"? state.data.logModifiche.filter(l=>l.tabella===state.filtroLogModifiche) : state.data.logModifiche;
+  wireExportButtons("exp-log", "registro_modifiche", "Registro modifiche",
+    ["Quando","Tabella","Campo","Prima","Dopo","Utente"],
+    ()=>rows.map(l=>[fmtDate(l.created_at), nomeTabella(l.tabella), l.campo||"", l.valore_prima==null?"":String(l.valore_prima), l.valore_dopo==null?"":String(l.valore_dopo), nomeUtente(l.utente_id)])
+  );
 }
 
 // ============================================================
