@@ -495,6 +495,14 @@ async function render(){
   const vedeContabilita = ["contabile","admin"].includes(ruolo);
   const vedeAndamento = ["shareholder","admin"].includes(ruolo);
   const vedeInventarioRapido = ["magazzino","admin"].includes(ruolo);
+  const vedeReport = isOperativo;
+
+  if(isOperativo && !_automazioniEseguite){
+    _automazioniEseguite = true;
+    const { error: erroreAuto } = await sb.rpc("genera_notifiche_automatiche");
+    if(!erroreAuto) await loadAll();
+  }
+
   const navItems = [["dashboard","Dashboard",isOperativo],
     ["clienti","Clienti",isOperativo],
     ["cantieri","Cantieri",isOperativo],
@@ -510,6 +518,7 @@ async function render(){
     ["cassa","Cassa",vedeContabilita],
     ["messaggi","Messaggi",isOperativo],
     ["andamento","Andamento azienda",vedeAndamento],
+    ["report","Report avanzati",vedeReport],
     ["registromodifiche","Registro modifiche",ruolo==="admin"],
     ["utenti","Utenti",ruolo==="admin"]];
   if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
@@ -553,6 +562,7 @@ async function render(){
   if(state.view==="messaggi") { main.innerHTML = viewMessaggi(); wireMessaggi(); }
   if(state.view==="ddt") { main.innerHTML = viewDDT(); wireDDT(); }
   if(state.view==="inventariorapido") { main.innerHTML = viewInventarioRapido(); wireInventarioRapido(); }
+  if(state.view==="report") { main.innerHTML = viewReport(); wireReport(); }
   if(state.view==="registromodifiche") { main.innerHTML = viewRegistroModifiche(); wireRegistroModifiche(); }
   if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
   if(state.view==="andamento") { main.innerHTML = await viewAndamento(); wireAndamento(); }
@@ -799,6 +809,7 @@ async function viewAndamento(){
 // Palette validata (categorica, ordine fisso): blu, arancio, verde acqua
 const COLORE_BLU = "#2a78d6", COLORE_ARANCIO = "#eb6834", COLORE_AQUA = "#1baf7a";
 let _chartInstances = {};
+let _automazioniEseguite = false;
 function disegnaGrafico(id, config){
   const canvas = document.getElementById(id);
   if(!canvas || typeof Chart === "undefined") return;
@@ -864,6 +875,237 @@ function wireAndamento(){
     ]},
     options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ ticks:{ callback:v=>fmtMoney(v) } } } }
   });
+}
+
+// ============================================================
+// REPORT AVANZATI E AUTOMAZIONI (FASE V6)
+// Tutto calcolato nel browser a partire dai dati che il ruolo può già
+// leggere: nessuna nuova tabella, nessun servizio esterno a pagamento.
+// L'ultimo report ("Clienti da ricontattare") è un suggerimento
+// automatico basato su regole (non un vero servizio di intelligenza
+// artificiale esterno, che avrebbe un costo).
+// ============================================================
+function calcolaFatturatoPerCliente(){
+  const map = {};
+  state.data.fatture.filter(f=>f.tipo==="emessa").forEach(f=>{
+    const key = f.cliente_id;
+    if(!map[key]) map[key] = { clienteId:key, fatturato:0, incassato:0, daIncassare:0 };
+    const importo = Number(f.importo_totale)||0;
+    map[key].fatturato += importo;
+    if(f.stato==="pagata") map[key].incassato += importo; else map[key].daIncassare += importo;
+  });
+  return Object.values(map).sort((a,b)=>b.fatturato-a.fatturato);
+}
+function fasciaRitardo(giorni){
+  if(giorni<=30) return "0-30 giorni";
+  if(giorni<=60) return "31-60 giorni";
+  if(giorni<=90) return "61-90 giorni";
+  return "Oltre 90 giorni";
+}
+function calcolaFattureScadute(){
+  const oggi = new Date(new Date().toDateString());
+  return state.data.fatture.filter(f=>f.tipo==="emessa" && isScaduta(f)).map(f=>{
+    const giorni = Math.floor((oggi - new Date(f.data_scadenza)) / (1000*60*60*24));
+    return { fattura:f, giorniRitardo: giorni, fascia: fasciaRitardo(giorni) };
+  }).sort((a,b)=>b.giorniRitardo-a.giorniRitardo);
+}
+function calcolaArticoliMovimentati(){
+  const map = {};
+  state.data.ddtRighe.forEach(r=>{
+    if(!r.articolo_id) return;
+    map[r.articolo_id] = (map[r.articolo_id]||0) + (Number(r.quantita)||0);
+  });
+  return Object.entries(map).map(([articoloId, quantita])=>({ articoloId, quantita }))
+    .sort((a,b)=>b.quantita-a.quantita);
+}
+function calcolaClientiDaRicontattare(){
+  const oggi = new Date(new Date().toDateString());
+  const risultato = [];
+  state.data.clienti.forEach(c=>{
+    const stato = c.stato_crm||"prospect";
+    if(stato==="cliente_inattivo") return;
+    let motivo = null, urgenza = 0;
+    if(c.prossimo_contatto){
+      const pc = new Date(c.prossimo_contatto);
+      const giorni = Math.floor((oggi - pc) / (1000*60*60*24));
+      if(giorni>=0){ motivo = giorni===0? "Contatto programmato per oggi" : `Contatto programmato in ritardo di ${giorni} giorni`; urgenza = 1000 + giorni; }
+    }
+    if(!motivo && !c.ultimo_contatto){
+      motivo = "Non è ancora stato contattato"; urgenza = 500;
+    } else if(!motivo && c.ultimo_contatto){
+      const giorni = Math.floor((oggi - new Date(c.ultimo_contatto)) / (1000*60*60*24));
+      if(giorni>60){ motivo = `Nessun contatto da ${giorni} giorni`; urgenza = giorni; }
+    }
+    if(motivo) risultato.push({ cliente:c, motivo, urgenza });
+  });
+  return risultato.sort((a,b)=>b.urgenza-a.urgenza);
+}
+function viewReport(){
+  const ruolo = myRole();
+  const vedeContabilitaRep = ["contabile","admin"].includes(ruolo);
+  const vedeMagazzinoRep = ["magazzino","admin"].includes(ruolo);
+  const vedeCrmRep = ["commerciale","admin"].includes(ruolo);
+  const tabs = [
+    ["fatturato","Fatturato per cliente", vedeContabilitaRep],
+    ["scadute","Fatture scadute", vedeContabilitaRep],
+    ["articoli","Articoli più movimentati", vedeMagazzinoRep],
+    ["clienti","Clienti da ricontattare", vedeCrmRep],
+  ].filter(t=>t[2]);
+  if(tabs.length===0) return `<div class="card"><div class="empty">Nessun report disponibile per il tuo ruolo.</div></div>`;
+  if(!tabs.find(t=>t[0]===state.reportTab)) state.reportTab = tabs[0][0];
+  let corpo = "";
+  if(state.reportTab==="fatturato") corpo = renderReportFatturatoCliente();
+  else if(state.reportTab==="scadute") corpo = renderReportFattureScadute();
+  else if(state.reportTab==="articoli") corpo = renderReportArticoliMovimentati();
+  else if(state.reportTab==="clienti") corpo = renderReportClientiDaRicontattare();
+  return `
+    <div class="card">
+      <h2>Report avanzati</h2>
+      <p><small class="hint">Analisi calcolate in automatico sui dati già presenti nel gestionale.</small></p>
+      <div class="pill-select" id="filtro-report-tab">
+        ${tabs.map(t=>`<button data-t="${t[0]}" class="${state.reportTab===t[0]?"active":""}">${t[1]}</button>`).join("")}
+      </div>
+    </div>
+    <div id="report-body">${corpo}</div>
+  `;
+}
+function wireReport(){
+  document.querySelectorAll("#filtro-report-tab button").forEach(b=>{
+    b.onclick = ()=>{ state.reportTab = b.dataset.t; render(); };
+  });
+  if(state.reportTab==="fatturato") wireReportFatturatoCliente();
+  else if(state.reportTab==="scadute") wireReportFattureScadute();
+  else if(state.reportTab==="articoli") wireReportArticoliMovimentati();
+  else if(state.reportTab==="clienti") wireReportClientiDaRicontattare();
+}
+function renderReportFatturatoCliente(){
+  const righe = calcolaFatturatoPerCliente();
+  const top = righe.slice(0,15);
+  const totale = righe.reduce((s,r)=>s+r.fatturato,0);
+  return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(totale)}</div><div class="lbl">Fatturato totale (tutte le fatture emesse)</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Clienti fatturati</div></div>
+    </div>
+    <div class="card">
+      <h2>Fatturato per cliente (primi 15)</h2>
+      <div class="chart-wrap"><canvas id="chart-report-fatturato"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Dettaglio per cliente</h2>
+      ${exportButtonsHtml("exp-report-fatturato")}
+      ${righe.length===0? `<div class="empty">Nessuna fattura emessa registrata.</div>` : `
+      <table><thead><tr><th>Cliente</th><th>Fatturato</th><th>Incassato</th><th>Da incassare</th></tr></thead>
+      <tbody>${righe.map(r=>`<tr><td>${escapeHtml(clienteNome(r.clienteId))}</td><td>${fmtMoney(r.fatturato)}</td><td>${fmtMoney(r.incassato)}</td><td>${fmtMoney(r.daIncassare)}</td></tr>`).join("")}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+function wireReportFatturatoCliente(){
+  const righe = calcolaFatturatoPerCliente();
+  const top = righe.slice(0,15);
+  disegnaGrafico("chart-report-fatturato", {
+    type: "bar",
+    data: { labels: top.map(r=>clienteNome(r.clienteId)), datasets: [{ label:"Fatturato (€)", data: top.map(r=>r.fatturato), backgroundColor: COLORE_BLU, borderRadius:4 }] },
+    options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+  wireExportButtons("exp-report-fatturato", "fatturato_per_cliente", "Fatturato per cliente",
+    ["Cliente","Fatturato","Incassato","Da incassare"],
+    ()=>righe.map(r=>[clienteNome(r.clienteId), r.fatturato.toFixed(2), r.incassato.toFixed(2), r.daIncassare.toFixed(2)]));
+}
+function renderReportFattureScadute(){
+  const righe = calcolaFattureScadute();
+  const fasce = ["0-30 giorni","31-60 giorni","61-90 giorni","Oltre 90 giorni"];
+  const totali = fasce.map(fa=>righe.filter(r=>r.fascia===fa).reduce((s,r)=>s+Number(r.fattura.importo_totale),0));
+  const totaleScaduto = righe.reduce((s,r)=>s+Number(r.fattura.importo_totale),0);
+  return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(totaleScaduto)}</div><div class="lbl">Totale scaduto e non incassato</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Fatture scadute</div></div>
+    </div>
+    <div class="card">
+      <h2>Scadenziario (aging) per fascia di ritardo</h2>
+      <div class="chart-wrap"><canvas id="chart-report-scadute"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Elenco fatture scadute</h2>
+      ${exportButtonsHtml("exp-report-scadute")}
+      ${righe.length===0? `<div class="empty">Nessuna fattura scaduta: ottimo lavoro.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Scadenza</th><th>Giorni di ritardo</th><th>Fascia</th><th>Importo</th></tr></thead>
+      <tbody>${righe.map(r=>`<tr><td>#${r.fattura.numero}</td><td>${escapeHtml(clienteNome(r.fattura.cliente_id))}</td><td>${fmtDateOnly(r.fattura.data_scadenza)}</td><td>${r.giorniRitardo}</td><td>${r.fascia}</td><td>${fmtMoney(r.fattura.importo_totale)}</td></tr>`).join("")}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+function wireReportFattureScadute(){
+  const righe = calcolaFattureScadute();
+  const fasce = ["0-30 giorni","31-60 giorni","61-90 giorni","Oltre 90 giorni"];
+  const totali = fasce.map(fa=>righe.filter(r=>r.fascia===fa).reduce((s,r)=>s+Number(r.fattura.importo_totale),0));
+  disegnaGrafico("chart-report-scadute", {
+    type: "bar",
+    data: { labels: fasce, datasets: [{ label:"Importo scaduto (€)", data: totali, backgroundColor:[COLORE_AQUA,COLORE_ARANCIO,COLORE_ARANCIO,"#c0392b"], borderRadius:4 }] },
+    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+  wireExportButtons("exp-report-scadute", "fatture_scadute", "Fatture scadute",
+    ["Numero","Cliente","Scadenza","Giorni di ritardo","Fascia","Importo"],
+    ()=>righe.map(r=>[r.fattura.numero, clienteNome(r.fattura.cliente_id), fmtDateOnly(r.fattura.data_scadenza), r.giorniRitardo, r.fascia, Number(r.fattura.importo_totale).toFixed(2)]));
+}
+function renderReportArticoliMovimentati(){
+  const righe = calcolaArticoliMovimentati();
+  const top = righe.slice(0,15);
+  return `
+    <div class="card">
+      <p><small class="hint">Quantità totale movimentata (caricata/scaricata) tramite DDT per ogni articolo.</small></p>
+      <h2>Articoli più movimentati (primi 15)</h2>
+      <div class="chart-wrap"><canvas id="chart-report-articoli"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Dettaglio per articolo</h2>
+      ${exportButtonsHtml("exp-report-articoli")}
+      ${righe.length===0? `<div class="empty">Nessun movimento registrato tramite DDT.</div>` : `
+      <table><thead><tr><th>Articolo</th><th>Quantità movimentata</th></tr></thead>
+      <tbody>${righe.map(r=>`<tr><td>${escapeHtml(articoloLabel(r.articoloId))}</td><td>${r.quantita}</td></tr>`).join("")}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+function wireReportArticoliMovimentati(){
+  const righe = calcolaArticoliMovimentati();
+  const top = righe.slice(0,15);
+  disegnaGrafico("chart-report-articoli", {
+    type: "bar",
+    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Quantità", data: top.map(r=>r.quantita), backgroundColor: COLORE_AQUA, borderRadius:4 }] },
+    options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
+  });
+  wireExportButtons("exp-report-articoli", "articoli_movimentati", "Articoli più movimentati",
+    ["Articolo","Quantità movimentata"],
+    ()=>righe.map(r=>[articoloLabel(r.articoloId), r.quantita]));
+}
+function renderReportClientiDaRicontattare(){
+  const righe = calcolaClientiDaRicontattare();
+  return `
+    <div class="card">
+      <p><small class="hint">Suggerimento automatico basato su regole: contatti programmati in ritardo, clienti mai contattati o senza contatti recenti. Non è un'intelligenza artificiale esterna, solo un controllo automatico sui dati del CRM.</small></p>
+      <h2>Clienti da ricontattare (${righe.length})</h2>
+      ${exportButtonsHtml("exp-report-clienti")}
+      ${righe.length===0? `<div class="empty">Nessun cliente da ricontattare al momento.</div>` : `
+      <table><thead><tr><th>Cliente</th><th>Stato CRM</th><th>Motivo</th><th>Ultimo contatto</th><th>Prossimo contatto</th></tr></thead>
+      <tbody>${righe.map(r=>`<tr>
+        <td>${escapeHtml(r.cliente.ragione_sociale)}</td>
+        <td><span class="badge ${statoCrmClass(r.cliente.stato_crm)}">${statoCrmLabel(r.cliente.stato_crm)}</span></td>
+        <td>${escapeHtml(r.motivo)}</td>
+        <td>${fmtDateOnly(r.cliente.ultimo_contatto)}</td>
+        <td>${fmtDateOnly(r.cliente.prossimo_contatto)}</td>
+      </tr>`).join("")}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+function wireReportClientiDaRicontattare(){
+  const righe = calcolaClientiDaRicontattare();
+  wireExportButtons("exp-report-clienti", "clienti_da_ricontattare", "Clienti da ricontattare",
+    ["Cliente","Stato CRM","Motivo","Ultimo contatto","Prossimo contatto"],
+    ()=>righe.map(r=>[r.cliente.ragione_sociale, statoCrmLabel(r.cliente.stato_crm), r.motivo, fmtDateOnly(r.cliente.ultimo_contatto), fmtDateOnly(r.cliente.prossimo_contatto)]));
 }
 
 // ============================================================
