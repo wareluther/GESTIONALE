@@ -194,14 +194,14 @@ function exportCSV(filename, headers, rows){
   scaricaBlob(new Blob(["﻿"+lines.join("\n")], {type:"text/csv;charset=utf-8;"}), filename+".csv");
 }
 function exportExcel(filename, headers, rows, sheetName){
-  if(typeof XLSX==="undefined"){ alert("La libreria per l'export Excel non si è ancora caricata: riprova tra qualche secondo."); return; }
+  if(typeof XLSX==="undefined"){ alert(tr("La libreria per l'export Excel non si è ancora caricata: riprova tra qualche secondo.","La bibliothèque pour l'export Excel n'est pas encore chargée : réessayez dans quelques secondes.")); return; }
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, (sheetName||"Foglio1").slice(0,31));
   XLSX.writeFile(wb, filename+".xlsx");
 }
 function exportPDF(filename, title, headers, rows){
-  if(typeof window.jspdf==="undefined"){ alert("La libreria per l'export PDF non si è ancora caricata: riprova tra qualche secondo."); return; }
+  if(typeof window.jspdf==="undefined"){ alert(tr("La libreria per l'export PDF non si è ancora caricata: riprova tra qualche secondo.","La bibliothèque pour l'export PDF n'est pas encore chargée : réessayez dans quelques secondes.")); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: headers.length>5? "landscape" : "portrait" });
   doc.setFontSize(14); doc.text(title, 14, 16);
@@ -235,21 +235,21 @@ function apriScannerQR(onRisultato){
   const body = `
     <video id="scanner-video" style="width:100%;border-radius:8px;background:#000;" playsinline muted autoplay></video>
     <canvas id="scanner-canvas" style="display:none;"></canvas>
-    <p><small class="hint">Inquadra il codice QR o a barre stampato sul pezzo. Serve il permesso di usare la fotocamera.</small></p>
+    <p><small class="hint">${tr("Inquadra il codice QR o a barre stampato sul pezzo. Serve il permesso di usare la fotocamera.","Cadrez le code QR ou à barres imprimé sur la pièce. L'autorisation d'utiliser la caméra est nécessaire.")}</small></p>
     <div id="scanner-msg"></div>
   `;
-  openModal("Scansiona codice", body, async (bodyEl)=>{
+  openModal(tr("Scansiona codice","Scanner le code"), body, async (bodyEl)=>{
     const video = bodyEl.querySelector("#scanner-video");
     const canvas = bodyEl.querySelector("#scanner-canvas");
     const ctx = canvas.getContext("2d");
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">Questo browser/dispositivo non supporta l'accesso alla fotocamera.</div>`;
+      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">${tr("Questo browser/dispositivo non supporta l'accesso alla fotocamera.","Ce navigateur/appareil ne prend pas en charge l'accès à la caméra.")}</div>`;
       return;
     }
     try{
       _scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     } catch(err){
-      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">Impossibile accedere alla fotocamera: ${escapeHtml(err.message)}</div>`;
+      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">${tr("Impossibile accedere alla fotocamera: ","Impossible d'accéder à la caméra : ")}${escapeHtml(err.message)}</div>`;
       return;
     }
     video.srcObject = _scannerStream;
@@ -286,22 +286,22 @@ function eseguiRicercaGlobale(query){
   const risultati = [];
   state.data.clienti.forEach(c=>{
     if([c.ragione_sociale,c.referente,c.email,c.telefono,c.piva].some(v=>v && String(v).toLowerCase().includes(q))){
-      risultati.push({ tipo:"Cliente", label: c.ragione_sociale, vai: ()=>{ state.view="clienti"; } });
+      risultati.push({ tipo:tr("Cliente","Client"), label: c.ragione_sociale, vai: ()=>{ state.view="clienti"; } });
     }
   });
   state.data.cantieri.forEach(k=>{
     if([k.nome,k.indirizzo,k.referente].some(v=>v && String(v).toLowerCase().includes(q))){
-      risultati.push({ tipo:"Cantiere", label: k.nome+" — "+clienteNome(k.cliente_id), vai: ()=>{ state.view="cantieri"; } });
+      risultati.push({ tipo:tr("Cantiere","Chantier"), label: k.nome+" — "+clienteNome(k.cliente_id), vai: ()=>{ state.view="cantieri"; } });
     }
   });
   state.data.pezzi.forEach(p=>{
     if(p.dtr && p.dtr.toLowerCase().includes(q)){
-      risultati.push({ tipo:"Pezzo (DTR)", label: p.dtr+" — "+articoloLabel(p.articolo_id), vai: ()=>{ state.view="pezzi"; } });
+      risultati.push({ tipo:tr("Pezzo (DTR)","Pièce (DTR)"), label: p.dtr+" — "+articoloLabel(p.articolo_id), vai: ()=>{ state.view="pezzi"; } });
     }
   });
   state.data.articoli.forEach(a=>{
     if([a.codice,a.descrizione].some(v=>v && String(v).toLowerCase().includes(q))){
-      risultati.push({ tipo:"Articolo", label: a.codice+" — "+a.descrizione, vai: ()=>{ state.view="magazzino"; } });
+      risultati.push({ tipo:tr("Articolo","Article"), label: a.codice+" — "+a.descrizione, vai: ()=>{ state.view="magazzino"; } });
     }
   });
   state.data.serviceOrders.forEach(s=>{
@@ -318,18 +318,18 @@ function eseguiRicercaGlobale(query){
 }
 function apriRicercaGlobale(){
   const body = `
-    <input type="text" id="ricerca-globale-input" placeholder="Cerca cliente, cantiere, DTR, articolo, Service Order, DDT..." autofocus>
+    <input type="text" id="ricerca-globale-input" placeholder="${tr("Cerca cliente, cantiere, DTR, articolo, Service Order, DDT...","Rechercher client, chantier, DTR, article, Service Order, BL...")}" autofocus>
     <div id="ricerca-globale-risultati" style="margin-top:14px;"></div>
   `;
-  openModal("Ricerca", body, (bodyEl)=>{
+  openModal(tr("Ricerca","Recherche"), body, (bodyEl)=>{
     const input = bodyEl.querySelector("#ricerca-globale-input");
     const risEl = bodyEl.querySelector("#ricerca-globale-risultati");
     function aggiorna(){
       const ris = eseguiRicercaGlobale(input.value);
-      if(input.value.trim().length<2){ risEl.innerHTML = `<div class="empty">Scrivi almeno 2 caratteri.</div>`; return; }
-      risEl.innerHTML = ris.length===0? `<div class="empty">Nessun risultato.</div>` : `
+      if(input.value.trim().length<2){ risEl.innerHTML = `<div class="empty">${tr("Scrivi almeno 2 caratteri.","Écrivez au moins 2 caractères.")}</div>`; return; }
+      risEl.innerHTML = ris.length===0? `<div class="empty">${tr("Nessun risultato.","Aucun résultat.")}</div>` : `
         <table><tbody>
-        ${ris.map((r,i)=>`<tr><td><span class="badge in_uso">${escapeHtml(r.tipo)}</span></td><td>${escapeHtml(r.label)}</td><td><button class="secondary btn-vai-risultato" data-i="${i}">Apri</button></td></tr>`).join("")}
+        ${ris.map((r,i)=>`<tr><td><span class="badge in_uso">${escapeHtml(r.tipo)}</span></td><td>${escapeHtml(r.label)}</td><td><button class="secondary btn-vai-risultato" data-i="${i}">${tr("Apri","Ouvrir")}</button></td></tr>`).join("")}
         </tbody></table>`;
       risEl.querySelectorAll(".btn-vai-risultato").forEach(b=>{
         b.onclick = ()=>{ ris[Number(b.dataset.i)].vai(); closeModal(); render(); };
@@ -360,9 +360,9 @@ function closeModal(){
   if(bg) bg.remove();
 }
 async function confirmDelete(table, id, labelCosa, afterOk){
-  if(!confirm(`Eliminare definitivamente ${labelCosa||"questo elemento"}?\nL'operazione non è reversibile.`)) return;
+  if(!confirm(tr(`Eliminare definitivamente ${labelCosa||"questo elemento"}?\nL'operazione non è reversibile.`,`Supprimer définitivement ${labelCosa||"cet élément"} ?\nCette opération n'est pas réversible.`))) return;
   const { error } = await sb.from(table).delete().eq("id", id);
-  if(error){ alert("Errore durante l'eliminazione: "+error.message+"\n\n(Solo l'amministratore può eliminare. Se l'errore persiste contatta l'admin.)"); return; }
+  if(error){ alert(tr("Errore durante l'eliminazione: ","Erreur lors de la suppression : ")+error.message+tr("\n\n(Solo l'amministratore può eliminare. Se l'errore persiste contatta l'admin.)","\n\n(Seul l'administrateur peut supprimer. Si l'erreur persiste, contactez l'admin.)")); return; }
   closeModal();
   if(afterOk) afterOk();
   render();
@@ -375,22 +375,22 @@ function apriNotifiche(){
   const eventi = state.data.notificheEventi;
   const lette = new Set(state.data.notificheLette.map(l=>l.evento_id));
   const body = `
-    <table><thead><tr><th>Evento</th><th>Quando</th><th></th></tr></thead>
+    <table><thead><tr><th>${tr("Evento","Événement")}</th><th>${tr("Quando","Quand")}</th><th></th></tr></thead>
     <tbody>
-      ${eventi.length===0? `<tr><td colspan="3" class="empty">Nessuna notifica.</td></tr>` : eventi.map(ev=>`
+      ${eventi.length===0? `<tr><td colspan="3" class="empty">${tr("Nessuna notifica.","Aucune notification.")}</td></tr>` : eventi.map(ev=>`
         <tr style="${lette.has(ev.id)?'':'font-weight:600;'}">
           <td>${escapeHtml(ev.messaggio)}</td>
           <td>${fmtDate(ev.created_at)}</td>
-          <td>${!lette.has(ev.id)? `<button class="secondary btn-segna-letta" data-id="${ev.id}">Segna come letta</button>` : "✓"}</td>
+          <td>${!lette.has(ev.id)? `<button class="secondary btn-segna-letta" data-id="${ev.id}">${tr("Segna come letta","Marquer comme lue")}</button>` : "✓"}</td>
         </tr>
       `).join("")}
     </tbody></table>
     <div class="actions" style="margin-top:14px;">
-      ${eventi.some(ev=>!lette.has(ev.id))? `<button id="btn-segna-tutte-lette">Segna tutte come lette</button>` : ""}
-      ${myRole()==="admin" && eventi.length>0? `<button class="secondary" id="btn-pulisci-notifiche">🧹 Elimina notifiche più vecchie di 90 giorni</button>` : ""}
+      ${eventi.some(ev=>!lette.has(ev.id))? `<button id="btn-segna-tutte-lette">${tr("Segna tutte come lette","Marquer toutes comme lues")}</button>` : ""}
+      ${myRole()==="admin" && eventi.length>0? `<button class="secondary" id="btn-pulisci-notifiche">🧹 ${tr("Elimina notifiche più vecchie di 90 giorni","Supprimer les notifications de plus de 90 jours")}</button>` : ""}
     </div>
   `;
-  openModal("Notifiche", body, (bodyEl)=>{
+  openModal(tr("Notifiche","Notifications"), body, (bodyEl)=>{
     bodyEl.querySelectorAll(".btn-segna-letta").forEach(b=>{
       b.onclick = async ()=>{
         await sb.from("notifiche_lette").insert({ utente_id: state.session.user.id, evento_id: b.dataset.id });
@@ -407,10 +407,10 @@ function apriNotifiche(){
     };
     const btnPulisci = bodyEl.querySelector("#btn-pulisci-notifiche");
     if(btnPulisci) btnPulisci.onclick = async ()=>{
-      if(!confirm("Eliminare definitivamente le notifiche più vecchie di 90 giorni? L'operazione non è reversibile.")) return;
+      if(!confirm(tr("Eliminare definitivamente le notifiche più vecchie di 90 giorni? L'operazione non è reversibile.","Supprimer définitivement les notifications de plus de 90 jours ? Cette opération n'est pas réversible."))) return;
       const cutoff = new Date(Date.now() - 90*24*60*60*1000).toISOString();
       const { error } = await sb.from("notifiche_eventi").delete().lt("created_at", cutoff);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       await loadAll();
       apriNotifiche();
     };
@@ -818,43 +818,43 @@ async function viewAndamento(){
   };
   return `
     <div class="card">
-      <h2>Andamento dell'azienda</h2>
-      <p><small class="hint">Vista di sola lettura riservata a soci/azionisti e amministratore: solo dati e totali aggregati, nessun dettaglio su singoli clienti/cantieri.</small></p>
+      <h2>${tr("Andamento dell'azienda","Performance de l'entreprise")}</h2>
+      <p><small class="hint">${tr("Vista di sola lettura riservata a soci/azionisti e amministratore: solo dati e totali aggregati, nessun dettaglio su singoli clienti/cantieri.","Vue en lecture seule réservée aux associés/actionnaires et à l'administrateur : uniquement des données et totaux agrégés, aucun détail sur les clients/chantiers individuels.")}</small></p>
       <div class="pill-select" id="filtro-periodo-andamento">
-        <button data-p="rolling12" class="${periodo==="rolling12"?"active":""}">Da sempre</button>
-        <button data-p="annocorrente" class="${periodo==="annocorrente"?"active":""}">Anno corrente (${annoCorrente})</button>
-        <button data-p="annoscorso" class="${periodo==="annoscorso"?"active":""}">Anno scorso (${annoScorso})</button>
-        <button data-p="confronto" class="${periodo==="confronto"?"active":""}">Confronta ${annoScorso} vs ${annoCorrente}</button>
+        <button data-p="rolling12" class="${periodo==="rolling12"?"active":""}">${tr("Da sempre","Depuis toujours")}</button>
+        <button data-p="annocorrente" class="${periodo==="annocorrente"?"active":""}">${tr("Anno corrente","Année en cours")} (${annoCorrente})</button>
+        <button data-p="annoscorso" class="${periodo==="annoscorso"?"active":""}">${tr("Anno scorso","Année dernière")} (${annoScorso})</button>
+        <button data-p="confronto" class="${periodo==="confronto"?"active":""}">${tr("Confronta","Comparer")} ${annoScorso} vs ${annoCorrente}</button>
       </div>
-      <p><small class="hint">Periodo selezionato: ${escapeHtml(etichettaPeriodo)}. I dati di clienti/cantieri/service order attivi e il valore di magazzino sono sempre riferiti ad oggi.</small></p>
+      <p><small class="hint">${tr("Periodo selezionato:","Période sélectionnée :")} ${escapeHtml(etichettaPeriodo)}. ${tr("I dati di clienti/cantieri/service order attivi e il valore di magazzino sono sempre riferiti ad oggi.","Les données des clients/chantiers/Service Order actifs et la valeur de l'entrepôt sont toujours rapportées à aujourd'hui.")}</small></p>
     </div>
     <div class="kpi-grid">
-      <div class="kpi"><div class="num">${fmtMoney(fin.fatturato)}</div><div class="lbl">Fatturato</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(fin.incassato)}</div><div class="lbl">Incassato</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(fin.daIncassare)}</div><div class="lbl">Da incassare</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(fin.costi)}</div><div class="lbl">Costi (fatture da fornitori)</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(fin.utile)}</div><div class="lbl">Utile stimato</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(fin.saldo)}</div><div class="lbl">Saldo cassa/banca (periodo)</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(valMagazzino)}</div><div class="lbl">Valore magazzino (a listino, ad oggi)</div></div>
-      <div class="kpi"><div class="num">${clientiAttivi}</div><div class="lbl">Clienti attivi (ad oggi)</div></div>
-      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi (ad oggi)</div></div>
-      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi (ad oggi)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.fatturato)}</div><div class="lbl">${tr("Fatturato","Chiffre d'affaires")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.incassato)}</div><div class="lbl">${tr("Incassato","Encaissé")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.daIncassare)}</div><div class="lbl">${tr("Da incassare","À encaisser")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.costi)}</div><div class="lbl">${tr("Costi (fatture da fornitori)","Coûts (factures fournisseurs)")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.utile)}</div><div class="lbl">${tr("Utile stimato","Bénéfice estimé")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.saldo)}</div><div class="lbl">${tr("Saldo cassa/banca (periodo)","Solde caisse/banque (période)")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valMagazzino)}</div><div class="lbl">${tr("Valore magazzino (a listino, ad oggi)","Valeur de l'entrepôt (au tarif, à ce jour)")}</div></div>
+      <div class="kpi"><div class="num">${clientiAttivi}</div><div class="lbl">${tr("Clienti attivi (ad oggi)","Clients actifs (à ce jour)")}</div></div>
+      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">${tr("Cantieri attivi (ad oggi)","Chantiers actifs (à ce jour)")}</div></div>
+      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">${tr("Service Order attivi (ad oggi)","Service Order actifs (à ce jour)")}</div></div>
     </div>
     <div class="charts-grid">
       <div class="card">
-        <h2>Fatturato, costi e utile</h2>
+        <h2>${tr("Fatturato, costi e utile","Chiffre d'affaires, coûts et bénéfice")}</h2>
         <div class="chart-wrap"><canvas id="chart-fattcostiutile"></canvas></div>
       </div>
       <div class="card">
-        <h2>Composizione fatturato clienti</h2>
+        <h2>${tr("Composizione fatturato clienti","Composition du chiffre d'affaires clients")}</h2>
         <div class="chart-wrap"><canvas id="chart-incassato"></canvas></div>
       </div>
       <div class="card" style="grid-column:1 / -1;">
-        <h2>Andamento mensile del fatturato</h2>
+        <h2>${tr("Andamento mensile del fatturato","Évolution mensuelle du chiffre d'affaires")}</h2>
         <div class="chart-wrap"><canvas id="chart-fatturato-mensile"></canvas></div>
       </div>
       <div class="card" style="grid-column:1 / -1;">
-        <h2>Saldo netto di cassa (entrate − uscite) per mese</h2>
+        <h2>${tr("Saldo netto di cassa (entrate − uscite) per mese","Solde net de caisse (entrées − sorties) par mois")}</h2>
         <div class="chart-wrap"><canvas id="chart-cassa-mensile"></canvas></div>
       </div>
     </div>
@@ -883,29 +883,29 @@ function wireAndamento(){
     const { annoA, annoB, finA, finB } = c.confrontoBarre;
     disegnaGrafico("chart-fattcostiutile", {
       type: "bar",
-      data: { labels: ["Fatturato","Costi","Utile"], datasets: [
-        { label:"Anno "+annoA, data:[finA.fatturato,finA.costi,finA.utile], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
-        { label:"Anno "+annoB, data:[finB.fatturato,finB.costi,finB.utile], backgroundColor: COLORE_BLU, borderRadius:4 },
+      data: { labels: [tr("Fatturato","Chiffre d'affaires"),tr("Costi","Coûts"),tr("Utile","Bénéfice")], datasets: [
+        { label:tr("Anno ","Année ")+annoA, data:[finA.fatturato,finA.costi,finA.utile], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
+        { label:tr("Anno ","Année ")+annoB, data:[finB.fatturato,finB.costi,finB.utile], backgroundColor: COLORE_BLU, borderRadius:4 },
       ]},
       options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
     });
     disegnaGrafico("chart-incassato", {
       type: "bar",
-      data: { labels: ["Incassato","Da incassare"], datasets: [
-        { label:"Anno "+annoA, data:[finA.incassato,finA.daIncassare], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
-        { label:"Anno "+annoB, data:[finB.incassato,finB.daIncassare], backgroundColor: COLORE_BLU, borderRadius:4 },
+      data: { labels: [tr("Incassato","Encaissé"),tr("Da incassare","À encaisser")], datasets: [
+        { label:tr("Anno ","Année ")+annoA, data:[finA.incassato,finA.daIncassare], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
+        { label:tr("Anno ","Année ")+annoB, data:[finB.incassato,finB.daIncassare], backgroundColor: COLORE_BLU, borderRadius:4 },
       ]},
       options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
     });
   } else {
     disegnaGrafico("chart-fattcostiutile", {
       type: "bar",
-      data: { labels: ["Fatturato","Costi","Utile"], datasets: [{ label:"Importo (FCFA)", data: [c.fin.fatturato,c.fin.costi,c.fin.utile], backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
+      data: { labels: [tr("Fatturato","Chiffre d'affaires"),tr("Costi","Coûts"),tr("Utile","Bénéfice")], datasets: [{ label:tr("Importo (FCFA)","Montant (FCFA)"), data: [c.fin.fatturato,c.fin.costi,c.fin.utile], backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
       options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
     });
     disegnaGrafico("chart-incassato", {
       type: "doughnut",
-      data: { labels: ["Incassato","Da incassare"], datasets: [{ data: [c.fin.incassato,c.fin.daIncassare], backgroundColor:[COLORE_BLU,COLORE_ARANCIO] }] },
+      data: { labels: [tr("Incassato","Encaissé"),tr("Da incassare","À encaisser")], datasets: [{ data: [c.fin.incassato,c.fin.daIncassare], backgroundColor:[COLORE_BLU,COLORE_ARANCIO] }] },
       options: { plugins:{ legend:{ position:"bottom" }, tooltip:{ callbacks:{ label:(ctx)=>ctx.label+": "+fmtMoney(ctx.raw) } } } }
     });
   }
@@ -916,7 +916,7 @@ function wireAndamento(){
       { label: c.legendaAnnoA, data: c.fatturatoMensile, borderColor: COLORE_ARANCIO, backgroundColor: COLORE_ARANCIO, tension:0.25, fill:false },
       { label: c.legendaAnnoB, data: c.fatturatoMensileB, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false },
     ] : [
-      { label:"Fatturato", data: c.fatturatoMensile, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false },
+      { label:tr("Fatturato","Chiffre d'affaires"), data: c.fatturatoMensile, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false },
     ]},
     options: { plugins:{ legend:{ display: confronto } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
@@ -926,7 +926,7 @@ function wireAndamento(){
       { label: c.legendaAnnoA, data: c.saldoMensile, backgroundColor: COLORE_ARANCIO },
       { label: c.legendaAnnoB, data: c.saldoMensileB, backgroundColor: COLORE_BLU },
     ] : [
-      { label:"Saldo netto", data: c.saldoMensile, backgroundColor: COLORE_BLU },
+      { label:tr("Saldo netto","Solde net"), data: c.saldoMensile, backgroundColor: COLORE_BLU },
     ]},
     options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ ticks:{ callback:v=>fmtMoney(v) } } } }
   });
@@ -997,13 +997,13 @@ function calcolaClientiDaRicontattare(){
     if(c.prossimo_contatto){
       const pc = new Date(c.prossimo_contatto);
       const giorni = Math.floor((oggi - pc) / (1000*60*60*24));
-      if(giorni>=0){ motivo = giorni===0? "Contatto programmato per oggi" : `Contatto programmato in ritardo di ${giorni} giorni`; urgenza = 1000 + giorni; }
+      if(giorni>=0){ motivo = giorni===0? tr("Contatto programmato per oggi","Contact prévu pour aujourd'hui") : tr(`Contatto programmato in ritardo di ${giorni} giorni`,`Contact prévu en retard de ${giorni} jours`); urgenza = 1000 + giorni; }
     }
     if(!motivo && !c.ultimo_contatto){
-      motivo = "Non è ancora stato contattato"; urgenza = 500;
+      motivo = tr("Non è ancora stato contattato","Pas encore contacté"); urgenza = 500;
     } else if(!motivo && c.ultimo_contatto){
       const giorni = Math.floor((oggi - new Date(c.ultimo_contatto)) / (1000*60*60*24));
-      if(giorni>60){ motivo = `Nessun contatto da ${giorni} giorni`; urgenza = giorni; }
+      if(giorni>60){ motivo = tr(`Nessun contatto da ${giorni} giorni`,`Aucun contact depuis ${giorni} jours`); urgenza = giorni; }
     }
     if(motivo) risultato.push({ cliente:c, motivo, urgenza });
   });
@@ -1016,13 +1016,13 @@ function viewReport(){
   const vedeCrmRep = ["commerciale","admin"].includes(ruolo);
   const vedeVenditeRep = ["magazzino","commerciale","admin"].includes(ruolo);
   const tabs = [
-    ["fatturato","Fatturato per cliente", vedeContabilitaRep],
-    ["scadute","Fatture scadute", vedeContabilitaRep],
-    ["venduti","Articoli venduti", vedeVenditeRep],
-    ["noleggiati","Articoli noleggiati", vedeVenditeRep],
-    ["clienti","Clienti da ricontattare", vedeCrmRep],
+    ["fatturato",tr("Fatturato per cliente","Chiffre d'affaires par client"), vedeContabilitaRep],
+    ["scadute",tr("Fatture scadute","Factures échues"), vedeContabilitaRep],
+    ["venduti",tr("Articoli venduti","Articles vendus"), vedeVenditeRep],
+    ["noleggiati",tr("Articoli noleggiati","Articles loués"), vedeVenditeRep],
+    ["clienti",tr("Clienti da ricontattare","Clients à recontacter"), vedeCrmRep],
   ].filter(t=>t[2]);
-  if(tabs.length===0) return `<div class="card"><div class="empty">Nessun report disponibile per il tuo ruolo.</div></div>`;
+  if(tabs.length===0) return `<div class="card"><div class="empty">${tr("Nessun report disponibile per il tuo ruolo.","Aucun rapport disponible pour votre rôle.")}</div></div>`;
   if(!tabs.find(t=>t[0]===state.reportTab)) state.reportTab = tabs[0][0];
   let corpo = "";
   if(state.reportTab==="fatturato") corpo = renderReportFatturatoCliente();
@@ -1032,8 +1032,8 @@ function viewReport(){
   else if(state.reportTab==="clienti") corpo = renderReportClientiDaRicontattare();
   return `
     <div class="card">
-      <h2>Report avanzati</h2>
-      <p><small class="hint">Analisi calcolate in automatico sui dati già presenti nel gestionale.</small></p>
+      <h2>${tr("Report avanzati","Rapports avancés")}</h2>
+      <p><small class="hint">${tr("Analisi calcolate in automatico sui dati già presenti nel gestionale.","Analyses calculées automatiquement sur les données déjà présentes dans le logiciel de gestion.")}</small></p>
       <div class="pill-select" id="filtro-report-tab">
         ${tabs.map(t=>`<button data-t="${t[0]}" class="${state.reportTab===t[0]?"active":""}">${t[1]}</button>`).join("")}
       </div>
@@ -1057,18 +1057,18 @@ function renderReportFatturatoCliente(){
   const totale = righe.reduce((s,r)=>s+r.fatturato,0);
   return `
     <div class="kpi-grid" style="margin-bottom:18px;">
-      <div class="kpi"><div class="num">${fmtMoney(totale)}</div><div class="lbl">Fatturato totale (tutte le fatture emesse)</div></div>
-      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Clienti fatturati</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totale)}</div><div class="lbl">${tr("Fatturato totale (tutte le fatture emesse)","Chiffre d'affaires total (toutes les factures émises)")}</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">${tr("Clienti fatturati","Clients facturés")}</div></div>
     </div>
     <div class="card">
-      <h2>Fatturato per cliente (primi 15)</h2>
+      <h2>${tr("Fatturato per cliente (primi 15)","Chiffre d'affaires par client (15 premiers)")}</h2>
       <div class="chart-wrap"><canvas id="chart-report-fatturato"></canvas></div>
     </div>
     <div class="card">
-      <h2>Dettaglio per cliente</h2>
+      <h2>${tr("Dettaglio per cliente","Détail par client")}</h2>
       ${exportButtonsHtml("exp-report-fatturato")}
-      ${righe.length===0? `<div class="empty">Nessuna fattura emessa registrata.</div>` : `
-      <table><thead><tr><th>Cliente</th><th>Fatturato</th><th>Incassato</th><th>Da incassare</th></tr></thead>
+      ${righe.length===0? `<div class="empty">${tr("Nessuna fattura emessa registrata.","Aucune facture émise enregistrée.")}</div>` : `
+      <table><thead><tr><th>${tr("Cliente","Client")}</th><th>${tr("Fatturato","Chiffre d'affaires")}</th><th>${tr("Incassato","Encaissé")}</th><th>${tr("Da incassare","À encaisser")}</th></tr></thead>
       <tbody>${righe.map(r=>`<tr><td>${escapeHtml(clienteNome(r.clienteId))}</td><td>${fmtMoney(r.fatturato)}</td><td>${fmtMoney(r.incassato)}</td><td>${fmtMoney(r.daIncassare)}</td></tr>`).join("")}</tbody>
       </table>`}
     </div>
@@ -1079,11 +1079,11 @@ function wireReportFatturatoCliente(){
   const top = righe.slice(0,15);
   disegnaGrafico("chart-report-fatturato", {
     type: "bar",
-    data: { labels: top.map(r=>clienteNome(r.clienteId)), datasets: [{ label:"Fatturato (FCFA)", data: top.map(r=>r.fatturato), backgroundColor: COLORE_BLU, borderRadius:4 }] },
+    data: { labels: top.map(r=>clienteNome(r.clienteId)), datasets: [{ label:tr("Fatturato (FCFA)","Chiffre d'affaires (FCFA)"), data: top.map(r=>r.fatturato), backgroundColor: COLORE_BLU, borderRadius:4 }] },
     options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
-  wireExportButtons("exp-report-fatturato", "fatturato_per_cliente", "Fatturato per cliente",
-    ["Cliente","Fatturato","Incassato","Da incassare"],
+  wireExportButtons("exp-report-fatturato", "fatturato_per_cliente", tr("Fatturato per cliente","Chiffre d'affaires par client"),
+    [tr("Cliente","Client"),tr("Fatturato","Chiffre d'affaires"),tr("Incassato","Encaissé"),tr("Da incassare","À encaisser")],
     ()=>righe.map(r=>[clienteNome(r.clienteId), r.fatturato.toFixed(2), r.incassato.toFixed(2), r.daIncassare.toFixed(2)]));
 }
 function renderReportFattureScadute(){
@@ -1093,18 +1093,18 @@ function renderReportFattureScadute(){
   const totaleScaduto = righe.reduce((s,r)=>s+Number(r.fattura.importo_totale),0);
   return `
     <div class="kpi-grid" style="margin-bottom:18px;">
-      <div class="kpi"><div class="num">${fmtMoney(totaleScaduto)}</div><div class="lbl">Totale scaduto e non incassato</div></div>
-      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Fatture scadute</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totaleScaduto)}</div><div class="lbl">${tr("Totale scaduto e non incassato","Total échu et non encaissé")}</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">${tr("Fatture scadute","Factures échues")}</div></div>
     </div>
     <div class="card">
-      <h2>Scadenziario (aging) per fascia di ritardo</h2>
+      <h2>${tr("Scadenziario (aging) per fascia di ritardo","Balance âgée par tranche de retard")}</h2>
       <div class="chart-wrap"><canvas id="chart-report-scadute"></canvas></div>
     </div>
     <div class="card">
-      <h2>Elenco fatture scadute</h2>
+      <h2>${tr("Elenco fatture scadute","Liste des factures échues")}</h2>
       ${exportButtonsHtml("exp-report-scadute")}
-      ${righe.length===0? `<div class="empty">Nessuna fattura scaduta: ottimo lavoro.</div>` : `
-      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Scadenza</th><th>Giorni di ritardo</th><th>Fascia</th><th>Importo</th></tr></thead>
+      ${righe.length===0? `<div class="empty">${tr("Nessuna fattura scaduta: ottimo lavoro.","Aucune facture échue : excellent travail.")}</div>` : `
+      <table><thead><tr><th>${tr("Numero","Numéro")}</th><th>${tr("Cliente","Client")}</th><th>${tr("Scadenza","Échéance")}</th><th>${tr("Giorni di ritardo","Jours de retard")}</th><th>${tr("Fascia","Tranche")}</th><th>${tr("Importo","Montant")}</th></tr></thead>
       <tbody>${righe.map(r=>`<tr><td>#${r.fattura.numero}</td><td>${escapeHtml(clienteNome(r.fattura.cliente_id))}</td><td>${fmtDateOnly(r.fattura.data_scadenza)}</td><td>${r.giorniRitardo}</td><td>${r.fascia}</td><td>${fmtMoney(r.fattura.importo_totale)}</td></tr>`).join("")}</tbody>
       </table>`}
     </div>
@@ -1116,11 +1116,11 @@ function wireReportFattureScadute(){
   const totali = fasce.map(fa=>righe.filter(r=>r.fascia===fa).reduce((s,r)=>s+Number(r.fattura.importo_totale),0));
   disegnaGrafico("chart-report-scadute", {
     type: "bar",
-    data: { labels: fasce, datasets: [{ label:"Importo scaduto (FCFA)", data: totali, backgroundColor:[COLORE_AQUA,COLORE_ARANCIO,COLORE_ARANCIO,"#c0392b"], borderRadius:4 }] },
+    data: { labels: fasce, datasets: [{ label:tr("Importo scaduto (FCFA)","Montant échu (FCFA)"), data: totali, backgroundColor:[COLORE_AQUA,COLORE_ARANCIO,COLORE_ARANCIO,"#c0392b"], borderRadius:4 }] },
     options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
-  wireExportButtons("exp-report-scadute", "fatture_scadute", "Fatture scadute",
-    ["Numero","Cliente","Scadenza","Giorni di ritardo","Fascia","Importo"],
+  wireExportButtons("exp-report-scadute", "fatture_scadute", tr("Fatture scadute","Factures échues"),
+    [tr("Numero","Numéro"),tr("Cliente","Client"),tr("Scadenza","Échéance"),tr("Giorni di ritardo","Jours de retard"),tr("Fascia","Tranche"),tr("Importo","Montant")],
     ()=>righe.map(r=>[r.fattura.numero, clienteNome(r.fattura.cliente_id), fmtDateOnly(r.fattura.data_scadenza), r.giorniRitardo, r.fascia, Number(r.fattura.importo_totale).toFixed(2)]));
 }
 function renderReportArticoliVenduti(){
@@ -1129,19 +1129,19 @@ function renderReportArticoliVenduti(){
   const totaleValore = righe.reduce((s,r)=>s+r.valore,0);
   return `
     <div class="kpi-grid" style="margin-bottom:18px;">
-      <div class="kpi"><div class="num">${fmtMoney(totaleValore)}</div><div class="lbl">Valore totale venduto (preventivi accettati)</div></div>
-      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Articoli diversi venduti</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totaleValore)}</div><div class="lbl">${tr("Valore totale venduto (preventivi accettati)","Valeur totale vendue (devis acceptés)")}</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">${tr("Articoli diversi venduti","Articles différents vendus")}</div></div>
     </div>
     <div class="card">
-      <p><small class="hint">Calcolato sulle righe "Vendita" dei preventivi accettati (le bozze e i preventivi rifiutati non contano).</small></p>
-      <h2>Articoli più venduti (primi 15 per valore)</h2>
+      <p><small class="hint">${tr('Calcolato sulle righe "Vendita" dei preventivi accettati (le bozze e i preventivi rifiutati non contano).','Calculé sur les lignes "Vente" des devis acceptés (les brouillons et les devis refusés ne comptent pas).')}</small></p>
+      <h2>${tr("Articoli più venduti (primi 15 per valore)","Articles les plus vendus (15 premiers par valeur)")}</h2>
       <div class="chart-wrap"><canvas id="chart-report-venduti"></canvas></div>
     </div>
     <div class="card">
-      <h2>Dettaglio per articolo</h2>
+      <h2>${tr("Dettaglio per articolo","Détail par article")}</h2>
       ${exportButtonsHtml("exp-report-venduti")}
-      ${righe.length===0? `<div class="empty">Nessuna vendita registrata nei preventivi accettati.</div>` : `
-      <table><thead><tr><th>Articolo</th><th>Quantità venduta</th><th>Valore</th></tr></thead>
+      ${righe.length===0? `<div class="empty">${tr("Nessuna vendita registrata nei preventivi accettati.","Aucune vente enregistrée dans les devis acceptés.")}</div>` : `
+      <table><thead><tr><th>${tr("Articolo","Article")}</th><th>${tr("Quantità venduta","Quantité vendue")}</th><th>${tr("Valore","Valeur")}</th></tr></thead>
       <tbody>${righe.map(r=>`<tr><td>${escapeHtml(articoloLabel(r.articoloId))}</td><td>${r.quantita}</td><td>${fmtMoney(r.valore)}</td></tr>`).join("")}</tbody>
       </table>`}
     </div>
@@ -1152,11 +1152,11 @@ function wireReportArticoliVenduti(){
   const top = righe.slice(0,15);
   disegnaGrafico("chart-report-venduti", {
     type: "bar",
-    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore venduto (FCFA)", data: top.map(r=>r.valore), backgroundColor: COLORE_BLU, borderRadius:4 }] },
+    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:tr("Valore venduto (FCFA)","Valeur vendue (FCFA)"), data: top.map(r=>r.valore), backgroundColor: COLORE_BLU, borderRadius:4 }] },
     options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
-  wireExportButtons("exp-report-venduti", "articoli_venduti", "Articoli venduti",
-    ["Articolo","Quantità venduta","Valore"],
+  wireExportButtons("exp-report-venduti", "articoli_venduti", tr("Articoli venduti","Articles vendus"),
+    [tr("Articolo","Article"),tr("Quantità venduta","Quantité vendue"),tr("Valore","Valeur")],
     ()=>righe.map(r=>[articoloLabel(r.articoloId), r.quantita, r.valore.toFixed(2)]));
 }
 function renderReportArticoliNoleggiati(){
@@ -1165,19 +1165,19 @@ function renderReportArticoliNoleggiati(){
   const totaleValore = righe.reduce((s,r)=>s+r.valore,0);
   return `
     <div class="kpi-grid" style="margin-bottom:18px;">
-      <div class="kpi"><div class="num">${fmtMoney(totaleValore)}</div><div class="lbl">Valore totale noleggiato (preventivi accettati)</div></div>
-      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Articoli diversi noleggiati</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totaleValore)}</div><div class="lbl">${tr("Valore totale noleggiato (preventivi accettati)","Valeur totale louée (devis acceptés)")}</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">${tr("Articoli diversi noleggiati","Articles différents loués")}</div></div>
     </div>
     <div class="card">
-      <p><small class="hint">Calcolato sulle righe "Noleggio" (giornaliero/settimanale/mensile) dei preventivi accettati.</small></p>
-      <h2>Articoli più noleggiati (primi 15 per valore)</h2>
+      <p><small class="hint">${tr('Calcolato sulle righe "Noleggio" (giornaliero/settimanale/mensile) dei preventivi accettati.','Calculé sur les lignes "Location" (journalière/hebdomadaire/mensuelle) des devis acceptés.')}</small></p>
+      <h2>${tr("Articoli più noleggiati (primi 15 per valore)","Articles les plus loués (15 premiers par valeur)")}</h2>
       <div class="chart-wrap"><canvas id="chart-report-noleggiati"></canvas></div>
     </div>
     <div class="card">
-      <h2>Dettaglio per articolo</h2>
+      <h2>${tr("Dettaglio per articolo","Détail par article")}</h2>
       ${exportButtonsHtml("exp-report-noleggiati")}
-      ${righe.length===0? `<div class="empty">Nessun noleggio registrato nei preventivi accettati.</div>` : `
-      <table><thead><tr><th>Articolo</th><th>Quantità (giornaliero)</th><th>Quantità (settimanale)</th><th>Quantità (mensile)</th><th>Valore</th></tr></thead>
+      ${righe.length===0? `<div class="empty">${tr("Nessun noleggio registrato nei preventivi accettati.","Aucune location enregistrée dans les devis acceptés.")}</div>` : `
+      <table><thead><tr><th>${tr("Articolo","Article")}</th><th>${tr("Quantità (giornaliero)","Quantité (journalière)")}</th><th>${tr("Quantità (settimanale)","Quantité (hebdomadaire)")}</th><th>${tr("Quantità (mensile)","Quantité (mensuelle)")}</th><th>${tr("Valore","Valeur")}</th></tr></thead>
       <tbody>${righe.map(r=>`<tr><td>${escapeHtml(articoloLabel(r.articoloId))}</td><td>${r.perDurata.noleggio_giornaliero||0}</td><td>${r.perDurata.noleggio_settimanale||0}</td><td>${r.perDurata.noleggio_mensile||0}</td><td>${fmtMoney(r.valore)}</td></tr>`).join("")}</tbody>
       </table>`}
     </div>
@@ -1188,22 +1188,22 @@ function wireReportArticoliNoleggiati(){
   const top = righe.slice(0,15);
   disegnaGrafico("chart-report-noleggiati", {
     type: "bar",
-    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore noleggiato (FCFA)", data: top.map(r=>r.valore), backgroundColor: COLORE_ARANCIO, borderRadius:4 }] },
+    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:tr("Valore noleggiato (FCFA)","Valeur louée (FCFA)"), data: top.map(r=>r.valore), backgroundColor: COLORE_ARANCIO, borderRadius:4 }] },
     options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
-  wireExportButtons("exp-report-noleggiati", "articoli_noleggiati", "Articoli noleggiati",
-    ["Articolo","Quantità giornaliero","Quantità settimanale","Quantità mensile","Valore"],
+  wireExportButtons("exp-report-noleggiati", "articoli_noleggiati", tr("Articoli noleggiati","Articles loués"),
+    [tr("Articolo","Article"),tr("Quantità giornaliero","Quantité journalière"),tr("Quantità settimanale","Quantité hebdomadaire"),tr("Quantità mensile","Quantité mensuelle"),tr("Valore","Valeur")],
     ()=>righe.map(r=>[articoloLabel(r.articoloId), r.perDurata.noleggio_giornaliero||0, r.perDurata.noleggio_settimanale||0, r.perDurata.noleggio_mensile||0, r.valore.toFixed(2)]));
 }
 function renderReportClientiDaRicontattare(){
   const righe = calcolaClientiDaRicontattare();
   return `
     <div class="card">
-      <p><small class="hint">Suggerimento automatico basato su regole: contatti programmati in ritardo, clienti mai contattati o senza contatti recenti. Non è un'intelligenza artificiale esterna, solo un controllo automatico sui dati del CRM.</small></p>
-      <h2>Clienti da ricontattare (${righe.length})</h2>
+      <p><small class="hint">${tr("Suggerimento automatico basato su regole: contatti programmati in ritardo, clienti mai contattati o senza contatti recenti. Non è un'intelligenza artificiale esterna, solo un controllo automatico sui dati del CRM.","Suggestion automatique basée sur des règles : contacts prévus en retard, clients jamais contactés ou sans contact récent. Ce n'est pas une intelligence artificielle externe, seulement un contrôle automatique sur les données du CRM.")}</small></p>
+      <h2>${tr("Clienti da ricontattare","Clients à recontacter")} (${righe.length})</h2>
       ${exportButtonsHtml("exp-report-clienti")}
-      ${righe.length===0? `<div class="empty">Nessun cliente da ricontattare al momento.</div>` : `
-      <table><thead><tr><th>Cliente</th><th>Stato CRM</th><th>Motivo</th><th>Ultimo contatto</th><th>Prossimo contatto</th></tr></thead>
+      ${righe.length===0? `<div class="empty">${tr("Nessun cliente da ricontattare al momento.","Aucun client à recontacter pour le moment.")}</div>` : `
+      <table><thead><tr><th>${tr("Cliente","Client")}</th><th>${tr("Stato CRM","Statut CRM")}</th><th>${tr("Motivo","Motif")}</th><th>${tr("Ultimo contatto","Dernier contact")}</th><th>${tr("Prossimo contatto","Prochain contact")}</th></tr></thead>
       <tbody>${righe.map(r=>`<tr>
         <td>${escapeHtml(r.cliente.ragione_sociale)}</td>
         <td><span class="badge ${statoCrmClass(r.cliente.stato_crm)}">${statoCrmLabel(r.cliente.stato_crm)}</span></td>
@@ -1217,8 +1217,8 @@ function renderReportClientiDaRicontattare(){
 }
 function wireReportClientiDaRicontattare(){
   const righe = calcolaClientiDaRicontattare();
-  wireExportButtons("exp-report-clienti", "clienti_da_ricontattare", "Clienti da ricontattare",
-    ["Cliente","Stato CRM","Motivo","Ultimo contatto","Prossimo contatto"],
+  wireExportButtons("exp-report-clienti", "clienti_da_ricontattare", tr("Clienti da ricontattare","Clients à recontacter"),
+    [tr("Cliente","Client"),tr("Stato CRM","Statut CRM"),tr("Motivo","Motif"),tr("Ultimo contatto","Dernier contact"),tr("Prossimo contatto","Prochain contact")],
     ()=>righe.map(r=>[r.cliente.ragione_sociale, statoCrmLabel(r.cliente.stato_crm), r.motivo, fmtDateOnly(r.cliente.ultimo_contatto), fmtDateOnly(r.cliente.prossimo_contatto)]));
 }
 
@@ -1237,34 +1237,34 @@ function viewClienti(){
   return `
     ${!puoModificare? "" : `
     <div class="card">
-      <h2>Nuovo cliente</h2>
+      <h2>${tr("Nuovo cliente","Nouveau client")}</h2>
       <form id="form-cliente">
         <div class="form-grid">
-          <div><label>Ragione sociale *</label><input required id="c-ragione"></div>
-          <div><label>Referente</label><input id="c-referente"></div>
-          <div><label>Telefono</label><input id="c-telefono"></div>
+          <div><label>${tr("Ragione sociale *","Raison sociale *")}</label><input required id="c-ragione"></div>
+          <div><label>${tr("Referente","Contact")}</label><input id="c-referente"></div>
+          <div><label>${tr("Telefono","Téléphone")}</label><input id="c-telefono"></div>
           <div><label>Email</label><input type="email" id="c-email"></div>
-          <div><label>Indirizzo</label><input id="c-indirizzo"></div>
-          <div><label>Partita IVA</label><input id="c-piva"></div>
-          <div><label>Settore</label><input id="c-settore"></div>
+          <div><label>${tr("Indirizzo","Adresse")}</label><input id="c-indirizzo"></div>
+          <div><label>${tr("Partita IVA","Numéro de TVA")}</label><input id="c-piva"></div>
+          <div><label>${tr("Settore","Secteur")}</label><input id="c-settore"></div>
         </div>
-        <label>Note</label><textarea id="c-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Salva cliente</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="c-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Salva cliente","Enregistrer le client")}</button></div>
       </form>
     </div>`}
     <div class="card">
-      <h2>Elenco clienti (${rows.length})</h2>
+      <h2>${tr("Elenco clienti","Liste des clients")} (${rows.length})</h2>
       ${exportButtonsHtml("exp-clienti")}
       <div class="pill-select" id="filtro-crm-clienti">
-        <button data-f="tutti" class="${filtro==="tutti"?"active":""}">Tutti</button>
+        <button data-f="tutti" class="${filtro==="tutti"?"active":""}">${tr("Tutti","Tous")}</button>
         <button data-f="prospect" class="${filtro==="prospect"?"active":""}">Prospect</button>
-        <button data-f="contattato" class="${filtro==="contattato"?"active":""}">Contattato</button>
-        <button data-f="preventivo_inviato" class="${filtro==="preventivo_inviato"?"active":""}">Preventivo inviato</button>
-        <button data-f="cliente" class="${filtro==="cliente"?"active":""}">Cliente</button>
-        <button data-f="cliente_inattivo" class="${filtro==="cliente_inattivo"?"active":""}">Cliente inattivo</button>
+        <button data-f="contattato" class="${filtro==="contattato"?"active":""}">${tr("Contattato","Contacté")}</button>
+        <button data-f="preventivo_inviato" class="${filtro==="preventivo_inviato"?"active":""}">${tr("Preventivo inviato","Devis envoyé")}</button>
+        <button data-f="cliente" class="${filtro==="cliente"?"active":""}">${tr("Cliente","Client")}</button>
+        <button data-f="cliente_inattivo" class="${filtro==="cliente_inattivo"?"active":""}">${tr("Cliente inattivo","Client inactif")}</button>
       </div>
-      ${rows.length===0? `<div class="empty">Nessun cliente trovato.</div>` : `
-      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>Stato CRM</th><th>Commerciale</th><th>Cantieri</th><th></th></tr></thead>
+      ${rows.length===0? `<div class="empty">${tr("Nessun cliente trovato.","Aucun client trouvé.")}</div>` : `
+      <table><thead><tr><th>${tr("Ragione sociale","Raison sociale")}</th><th>${tr("Referente","Contact")}</th><th>${tr("Telefono","Téléphone")}</th><th>Email</th><th>${tr("Stato CRM","Statut CRM")}</th><th>${tr("Commerciale","Commercial")}</th><th>${tr("Cantieri","Chantiers")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(c=>`
           <tr>
@@ -1277,8 +1277,8 @@ function viewClienti(){
             <td>${state.data.cantieri.filter(k=>k.cliente_id===c.id).length}</td>
             <td class="actions" style="margin:0;">
               <button class="secondary btn-crm-cliente" data-id="${c.id}">📞 CRM</button>
-              <button class="secondary btn-doc-cliente" data-id="${c.id}">📄 Documenti</button>
-              ${puoModificare? `<button class="secondary btn-edit-cliente" data-id="${c.id}">Modifica</button>` : ""}
+              <button class="secondary btn-doc-cliente" data-id="${c.id}">📄 ${tr("Documenti","Documents")}</button>
+              ${puoModificare? `<button class="secondary btn-edit-cliente" data-id="${c.id}">${tr("Modifica","Modifier")}</button>` : ""}
             </td>
           </tr>
         `).join("")}
@@ -1304,14 +1304,14 @@ function wireClienti(){
       created_by: state.session.user.id,
     };
     const { error } = await sb.from("clienti").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll("#filtro-crm-clienti button").forEach(b=>{
     b.onclick = ()=>{ state.filtroClientiCrm = b.dataset.f; render(); };
   });
-  wireExportButtons("exp-clienti", "clienti", "Clienti",
-    ["Ragione sociale","Referente","Telefono","Email","Stato CRM","Commerciale","Cantieri"],
+  wireExportButtons("exp-clienti", "clienti", tr("Clienti","Clients"),
+    [tr("Ragione sociale","Raison sociale"),tr("Referente","Contact"),tr("Telefono","Téléphone"),"Email",tr("Stato CRM","Statut CRM"),tr("Commerciale","Commercial"),tr("Cantieri","Chantiers")],
     ()=>rows.map(c=>[c.ragione_sociale, c.referente||"", c.telefono||"", c.email||"", statoCrmLabel(c.stato_crm), nomeUtente(c.commerciale_assegnato), state.data.cantieri.filter(k=>k.cliente_id===c.id).length])
   );
   document.querySelectorAll(".btn-edit-cliente").forEach(b=>{ b.onclick = ()=>editCliente(b.dataset.id); });
@@ -1324,7 +1324,7 @@ function wireClienti(){
   document.querySelectorAll(".btn-doc-cliente").forEach(b=>{
     b.onclick = ()=>{
       const c = state.data.clienti.find(x=>x.id===b.dataset.id);
-      renderModaleDocumenti("cliente", b.dataset.id, "Documenti — "+(c? c.ragione_sociale : ""));
+      renderModaleDocumenti("cliente", b.dataset.id, tr("Documenti","Documents")+" — "+(c? c.ragione_sociale : ""));
     };
   });
 }
@@ -1335,50 +1335,50 @@ function editCliente(id){
   const body = `
     <form id="form-edit-cliente">
       <div class="form-grid">
-        <div><label>Ragione sociale *</label><input required id="ec-ragione" value="${escapeHtml(c.ragione_sociale)}"></div>
-        <div><label>Referente</label><input id="ec-referente" value="${escapeHtml(c.referente||"")}"></div>
-        <div><label>Telefono</label><input id="ec-telefono" value="${escapeHtml(c.telefono||"")}"></div>
+        <div><label>${tr("Ragione sociale *","Raison sociale *")}</label><input required id="ec-ragione" value="${escapeHtml(c.ragione_sociale)}"></div>
+        <div><label>${tr("Referente","Contact")}</label><input id="ec-referente" value="${escapeHtml(c.referente||"")}"></div>
+        <div><label>${tr("Telefono","Téléphone")}</label><input id="ec-telefono" value="${escapeHtml(c.telefono||"")}"></div>
         <div><label>Email</label><input type="email" id="ec-email" value="${escapeHtml(c.email||"")}"></div>
-        <div><label>Indirizzo</label><input id="ec-indirizzo" value="${escapeHtml(c.indirizzo||"")}"></div>
-        <div><label>Partita IVA</label><input id="ec-piva" value="${escapeHtml(c.piva||"")}"></div>
-        <div><label>Settore</label><input id="ec-settore" value="${escapeHtml(c.settore||"")}"></div>
+        <div><label>${tr("Indirizzo","Adresse")}</label><input id="ec-indirizzo" value="${escapeHtml(c.indirizzo||"")}"></div>
+        <div><label>${tr("Partita IVA","Numéro de TVA")}</label><input id="ec-piva" value="${escapeHtml(c.piva||"")}"></div>
+        <div><label>${tr("Settore","Secteur")}</label><input id="ec-settore" value="${escapeHtml(c.settore||"")}"></div>
       </div>
-      <label>Note</label><textarea id="ec-note">${escapeHtml(c.note||"")}</textarea>
+      <label>${tr("Note","Notes")}</label><textarea id="ec-note">${escapeHtml(c.note||"")}</textarea>
       <h3 style="margin-top:18px;">CRM</h3>
       <div class="form-grid">
-        <div><label>Stato pipeline</label>
+        <div><label>${tr("Stato pipeline","Statut du pipeline")}</label>
           <select id="ec-stato-crm">
             <option value="prospect" ${c.stato_crm==="prospect"?"selected":""}>Prospect</option>
-            <option value="contattato" ${c.stato_crm==="contattato"?"selected":""}>Contattato</option>
-            <option value="preventivo_inviato" ${c.stato_crm==="preventivo_inviato"?"selected":""}>Preventivo inviato</option>
-            <option value="cliente" ${c.stato_crm==="cliente"?"selected":""}>Cliente</option>
-            <option value="cliente_inattivo" ${c.stato_crm==="cliente_inattivo"?"selected":""}>Cliente inattivo</option>
+            <option value="contattato" ${c.stato_crm==="contattato"?"selected":""}>${tr("Contattato","Contacté")}</option>
+            <option value="preventivo_inviato" ${c.stato_crm==="preventivo_inviato"?"selected":""}>${tr("Preventivo inviato","Devis envoyé")}</option>
+            <option value="cliente" ${c.stato_crm==="cliente"?"selected":""}>${tr("Cliente","Client")}</option>
+            <option value="cliente_inattivo" ${c.stato_crm==="cliente_inattivo"?"selected":""}>${tr("Cliente inattivo","Client inactif")}</option>
           </select>
         </div>
-        <div><label>Potenziale commerciale</label>
+        <div><label>${tr("Potenziale commerciale","Potentiel commercial")}</label>
           <select id="ec-potenziale">
-            <option value="">-- non definito --</option>
-            <option value="basso" ${c.potenziale==="basso"?"selected":""}>Basso</option>
-            <option value="medio" ${c.potenziale==="medio"?"selected":""}>Medio</option>
-            <option value="alto" ${c.potenziale==="alto"?"selected":""}>Alto</option>
+            <option value="">${tr("-- non definito --","-- non défini --")}</option>
+            <option value="basso" ${c.potenziale==="basso"?"selected":""}>${tr("Basso","Faible")}</option>
+            <option value="medio" ${c.potenziale==="medio"?"selected":""}>${tr("Medio","Moyen")}</option>
+            <option value="alto" ${c.potenziale==="alto"?"selected":""}>${tr("Alto","Élevé")}</option>
           </select>
         </div>
-        <div><label>Commerciale assegnato</label><select id="ec-commerciale"><option value="">-- nessuno --</option>${commercialiOpts}</select></div>
-        <div><label>Ultimo contatto</label><input type="date" id="ec-ultimo-contatto" value="${c.ultimo_contatto||""}"></div>
-        <div><label>Prossimo contatto</label><input type="date" id="ec-prossimo-contatto" value="${c.prossimo_contatto||""}"></div>
+        <div><label>${tr("Commerciale assegnato","Commercial assigné")}</label><select id="ec-commerciale"><option value="">${tr("-- nessuno --","-- aucun --")}</option>${commercialiOpts}</select></div>
+        <div><label>${tr("Ultimo contatto","Dernier contact")}</label><input type="date" id="ec-ultimo-contatto" value="${c.ultimo_contatto||""}"></div>
+        <div><label>${tr("Prossimo contatto","Prochain contact")}</label><input type="date" id="ec-prossimo-contatto" value="${c.prossimo_contatto||""}"></div>
       </div>
-      <label>Servizi/prodotti di interesse</label><textarea id="ec-servizi">${escapeHtml(c.servizi_interesse||"")}</textarea>
+      <label>${tr("Servizi/prodotti di interesse","Services/produits d'intérêt")}</label><textarea id="ec-servizi">${escapeHtml(c.servizi_interesse||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
-        <button type="submit">Salva modifiche</button>
-        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
-        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina cliente</button>` : ""}
+        <button type="submit">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">${tr("Annulla","Annuler")}</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">${tr("Elimina cliente","Supprimer le client")}</button>` : ""}
       </div>
     </form>
   `;
-  openModal("Modifica cliente", body, (bodyEl)=>{
+  openModal(tr("Modifica cliente","Modifier le client"), body, (bodyEl)=>{
     bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
     const btnDel = bodyEl.querySelector("#btn-elimina-edit");
-    if(btnDel) btnDel.onclick = ()=>confirmDelete("clienti", id, `il cliente "${c.ragione_sociale}" (e tutti i suoi cantieri)`);
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("clienti", id, tr(`il cliente "${c.ragione_sociale}" (e tutti i suoi cantieri)`,`le client "${c.ragione_sociale}" (et tous ses chantiers)`));
     bodyEl.querySelector("#form-edit-cliente").onsubmit = async (e)=>{
       e.preventDefault();
       const payload = {
@@ -1398,7 +1398,7 @@ function editCliente(id){
         servizi_interesse: bodyEl.querySelector("#ec-servizi").value.trim() || null,
       };
       const { error } = await sb.from("clienti").update(payload).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       closeModal();
       render();
     };
@@ -1415,39 +1415,39 @@ function renderModaleCrm(clienteId, titolo){
   const body = `
     ${c? `<p>
       <span class="badge ${statoCrmClass(c.stato_crm)}">${statoCrmLabel(c.stato_crm)}</span>
-      ${c.potenziale? ` &nbsp; <strong>Potenziale:</strong> ${potenzialeLabel(c.potenziale)}` : ""}
-      ${c.commerciale_assegnato? ` &nbsp; <strong>Assegnato a:</strong> ${escapeHtml(nomeUtente(c.commerciale_assegnato))}` : ""}
+      ${c.potenziale? ` &nbsp; <strong>${tr("Potenziale:","Potentiel :")}</strong> ${potenzialeLabel(c.potenziale)}` : ""}
+      ${c.commerciale_assegnato? ` &nbsp; <strong>${tr("Assegnato a:","Assigné à :")}</strong> ${escapeHtml(nomeUtente(c.commerciale_assegnato))}` : ""}
     </p>
     ${c.ultimo_contatto || c.prossimo_contatto? `<p><small class="hint">
-      ${c.ultimo_contatto? "Ultimo contatto: "+fmtDateOnly(c.ultimo_contatto)+". " : ""}
-      ${c.prossimo_contatto? "Prossimo contatto: "+fmtDateOnly(c.prossimo_contatto)+"." : ""}
+      ${c.ultimo_contatto? tr("Ultimo contatto: ","Dernier contact : ")+fmtDateOnly(c.ultimo_contatto)+". " : ""}
+      ${c.prossimo_contatto? tr("Prossimo contatto: ","Prochain contact : ")+fmtDateOnly(c.prossimo_contatto)+"." : ""}
     </small></p>` : ""}
-    ${c.servizi_interesse? `<p><strong>Interessi:</strong> ${escapeHtml(c.servizi_interesse)}</p>` : ""}` : ""}
+    ${c.servizi_interesse? `<p><strong>${tr("Interessi:","Intérêts :")}</strong> ${escapeHtml(c.servizi_interesse)}</p>` : ""}` : ""}
     ${puoScrivere? `
     <form id="form-attivita-crm">
       <div class="form-grid">
-        <div><label>Tipo</label>
+        <div><label>${tr("Tipo","Type")}</label>
           <select id="ac-tipo">
-            <option value="chiamata">Chiamata</option>
+            <option value="chiamata">${tr("Chiamata","Appel")}</option>
             <option value="email">Email</option>
-            <option value="incontro">Incontro</option>
-            <option value="nota">Nota</option>
-            <option value="altro">Altro</option>
+            <option value="incontro">${tr("Incontro","Réunion")}</option>
+            <option value="nota">${tr("Nota","Note")}</option>
+            <option value="altro">${tr("Altro","Autre")}</option>
           </select>
         </div>
       </div>
-      <label>Descrizione</label><textarea id="ac-descrizione" required placeholder="Cosa è successo, cosa è stato deciso..."></textarea>
-      <div style="margin-top:10px;"><button type="submit">Aggiungi attività</button></div>
+      <label>${tr("Descrizione","Description")}</label><textarea id="ac-descrizione" required placeholder="${tr("Cosa è successo, cosa è stato deciso...","Ce qui s'est passé, ce qui a été décidé...")}"></textarea>
+      <div style="margin-top:10px;"><button type="submit">${tr("Aggiungi attività","Ajouter une activité")}</button></div>
     </form>` : ""}
-    <table style="margin-top:14px;"><thead><tr><th>Data</th><th>Tipo</th><th>Descrizione</th><th>Di</th>${myRole()==="admin"?"<th></th>":""}</tr></thead>
+    <table style="margin-top:14px;"><thead><tr><th>${tr("Data","Date")}</th><th>${tr("Tipo","Type")}</th><th>${tr("Descrizione","Description")}</th><th>${tr("Di","Par")}</th>${myRole()==="admin"?"<th></th>":""}</tr></thead>
     <tbody>
-      ${attivita.length===0? `<tr><td colspan="5" class="empty">Nessuna attività registrata.</td></tr>` : attivita.map(a=>`
+      ${attivita.length===0? `<tr><td colspan="5" class="empty">${tr("Nessuna attività registrata.","Aucune activité enregistrée.")}</td></tr>` : attivita.map(a=>`
         <tr>
           <td>${fmtDate(a.data)}</td>
           <td>${escapeHtml(a.tipo)}</td>
           <td>${escapeHtml(a.descrizione)}</td>
           <td>${escapeHtml(nomeUtente(a.creato_da))}</td>
-          ${myRole()==="admin"? `<td><button class="secondary btn-elimina-attivita-crm" data-id="${a.id}" style="padding:2px 8px;font-size:11px;">Elimina</button></td>` : ""}
+          ${myRole()==="admin"? `<td><button class="secondary btn-elimina-attivita-crm" data-id="${a.id}" style="padding:2px 8px;font-size:11px;">${tr("Elimina","Supprimer")}</button></td>` : ""}
         </tr>
       `).join("")}
     </tbody></table>
@@ -1461,15 +1461,15 @@ function renderModaleCrm(clienteId, titolo){
       const { error } = await sb.from("attivita_crm").insert({
         cliente_id: clienteId, tipo: bodyEl.querySelector("#ac-tipo").value, descrizione, creato_da: state.session.user.id,
       });
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       await loadAll();
       renderModaleCrm(clienteId, titolo);
     };
     bodyEl.querySelectorAll(".btn-elimina-attivita-crm").forEach(b=>{
       b.onclick = async ()=>{
-        if(!confirm("Eliminare questa attività?")) return;
+        if(!confirm(tr("Eliminare questa attività?","Supprimer cette activité ?"))) return;
         const { error } = await sb.from("attivita_crm").delete().eq("id", b.dataset.id);
-        if(error){ alert("Errore: "+error.message); return; }
+        if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
         await loadAll();
         renderModaleCrm(clienteId, titolo);
       };
@@ -1487,18 +1487,18 @@ function renderModaleDocumenti(entitaTipo, entitaId, titolo){
   const body = `
     ${puoCaricare? `
     <form id="form-documento">
-      <label>Carica file, scatta una foto o scansiona il documento</label>
+      <label>${tr("Carica file, scatta una foto o scansiona il documento","Chargez un fichier, prenez une photo ou scannez le document")}</label>
       <input type="file" id="doc-file" accept="image/*,application/pdf" capture="environment" required>
-      <div style="margin-top:10px;"><button type="submit">Carica documento</button></div>
+      <div style="margin-top:10px;"><button type="submit">${tr("Carica documento","Charger le document")}</button></div>
     </form>` : ""}
     <div id="doc-upload-msg"></div>
-    <table style="margin-top:14px;"><thead><tr><th>File</th><th>Caricato il</th><th></th></tr></thead>
+    <table style="margin-top:14px;"><thead><tr><th>${tr("File","Fichier")}</th><th>${tr("Caricato il","Chargé le")}</th><th></th></tr></thead>
     <tbody>
-      ${docs.length===0? `<tr><td colspan="3" class="empty">Nessun documento caricato.</td></tr>` : docs.map(doc=>`
+      ${docs.length===0? `<tr><td colspan="3" class="empty">${tr("Nessun documento caricato.","Aucun document chargé.")}</td></tr>` : docs.map(doc=>`
         <tr>
           <td><a href="#" class="link-documento" data-path="${escapeHtml(doc.path||"")}">${escapeHtml(doc.nome_file)}</a></td>
           <td>${fmtDate(doc.created_at)}</td>
-          <td>${ruolo==="admin"? `<button class="secondary btn-elimina-doc" data-id="${doc.id}">Elimina</button>` : ""}</td>
+          <td>${ruolo==="admin"? `<button class="secondary btn-elimina-doc" data-id="${doc.id}">${tr("Elimina","Supprimer")}</button>` : ""}</td>
         </tr>
       `).join("")}
     </tbody></table>
@@ -1511,17 +1511,17 @@ function renderModaleDocumenti(entitaTipo, entitaId, titolo){
       const file = input.files[0];
       if(!file) return;
       const msg = bodyEl.querySelector("#doc-upload-msg");
-      msg.innerHTML = `<div class="msg">Caricamento in corso...</div>`;
+      msg.innerHTML = `<div class="msg">${tr("Caricamento in corso...","Chargement en cours...")}</div>`;
       const path = `${entitaTipo}/${entitaId}/${Date.now()}_${file.name}`;
       const { error: upErr } = await sb.storage.from("documenti").upload(path, file);
-      if(upErr){ msg.innerHTML = `<div class="msg error">Errore caricamento: ${escapeHtml(upErr.message)}</div>`; return; }
+      if(upErr){ msg.innerHTML = `<div class="msg error">${tr("Errore caricamento: ","Erreur de chargement : ")}${escapeHtml(upErr.message)}</div>`; return; }
       // Il bucket "documenti" è privato: salviamo solo il percorso interno,
       // il link per aprirlo viene generato al volo (valido un'ora) solo per chi ha accesso.
       const { error: insErr } = await sb.from("documenti").insert({
         entita_tipo: entitaTipo, entita_id: entitaId, nome_file: file.name,
         path, content_type: file.type || null, caricato_da: state.session.user.id,
       });
-      if(insErr){ msg.innerHTML = `<div class="msg error">Errore salvataggio: ${escapeHtml(insErr.message)}</div>`; return; }
+      if(insErr){ msg.innerHTML = `<div class="msg error">${tr("Errore salvataggio: ","Erreur d'enregistrement : ")}${escapeHtml(insErr.message)}</div>`; return; }
       await loadAll();
       renderModaleDocumenti(entitaTipo, entitaId, titolo);
     };
@@ -1529,17 +1529,17 @@ function renderModaleDocumenti(entitaTipo, entitaId, titolo){
       a.onclick = async (e)=>{
         e.preventDefault();
         const path = a.dataset.path;
-        if(!path){ alert("Documento non disponibile (caricato prima dell'aggiornamento di sicurezza)."); return; }
+        if(!path){ alert(tr("Documento non disponibile (caricato prima dell'aggiornamento di sicurezza).","Document non disponible (chargé avant la mise à jour de sécurité).")); return; }
         const { data, error } = await sb.storage.from("documenti").createSignedUrl(path, 3600);
-        if(error || !data){ alert("Errore apertura documento: "+(error?error.message:"")); return; }
+        if(error || !data){ alert(tr("Errore apertura documento: ","Erreur d'ouverture du document : ")+(error?error.message:"")); return; }
         window.open(data.signedUrl, "_blank", "noopener");
       };
     });
     bodyEl.querySelectorAll(".btn-elimina-doc").forEach(b=>{
       b.onclick = async ()=>{
-        if(!confirm("Eliminare questo documento?")) return;
+        if(!confirm(tr("Eliminare questo documento?","Supprimer ce document ?"))) return;
         const { error } = await sb.from("documenti").delete().eq("id", b.dataset.id);
-        if(error){ alert("Errore: "+error.message); return; }
+        if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
         await loadAll();
         renderModaleDocumenti(entitaTipo, entitaId, titolo);
       };
@@ -1557,27 +1557,27 @@ function viewCantieri(){
   return `
     ${!puoModificare? "" : `
     <div class="card">
-      <h2>Nuovo cantiere</h2>
-      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <h2>${tr("Nuovo cantiere","Nouveau chantier")}</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">${tr("Devi prima creare almeno un cliente.","Vous devez d'abord créer au moins un client.")}</div>` : `
       <form id="form-cantiere">
         <div class="form-grid">
-          <div><label>Cliente *</label><select required id="k-cliente">${clientiOpts}</select></div>
-          <div><label>Nome cantiere *</label><input required id="k-nome"></div>
-          <div><label>Indirizzo</label><input id="k-indirizzo"></div>
-          <div><label>Referente</label><input id="k-referente"></div>
-          <div><label>Stato</label>
-            <select id="k-stato"><option value="attivo">Attivo</option><option value="sospeso">Sospeso</option><option value="concluso">Concluso</option></select>
+          <div><label>${tr("Cliente *","Client *")}</label><select required id="k-cliente">${clientiOpts}</select></div>
+          <div><label>${tr("Nome cantiere *","Nom du chantier *")}</label><input required id="k-nome"></div>
+          <div><label>${tr("Indirizzo","Adresse")}</label><input id="k-indirizzo"></div>
+          <div><label>${tr("Referente","Contact")}</label><input id="k-referente"></div>
+          <div><label>${tr("Stato","Statut")}</label>
+            <select id="k-stato"><option value="attivo">${tr("Attivo","Actif")}</option><option value="sospeso">${tr("Sospeso","Suspendu")}</option><option value="concluso">${tr("Concluso","Terminé")}</option></select>
           </div>
         </div>
-        <label>Note</label><textarea id="k-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Salva cantiere</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="k-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Salva cantiere","Enregistrer le chantier")}</button></div>
       </form>`}
     </div>`}
     <div class="card">
-      <h2>Elenco cantieri (${rows.length})</h2>
+      <h2>${tr("Elenco cantieri","Liste des chantiers")} (${rows.length})</h2>
       ${exportButtonsHtml("exp-cantieri")}
-      ${rows.length===0? `<div class="empty">Nessun cantiere inserito.</div>` : `
-      <table><thead><tr><th>Nome</th><th>Cliente</th><th>Indirizzo</th><th>Referente</th><th>Stato</th><th>Pezzi presenti</th><th></th></tr></thead>
+      ${rows.length===0? `<div class="empty">${tr("Nessun cantiere inserito.","Aucun chantier saisi.")}</div>` : `
+      <table><thead><tr><th>${tr("Nome","Nom")}</th><th>${tr("Cliente","Client")}</th><th>${tr("Indirizzo","Adresse")}</th><th>${tr("Referente","Contact")}</th><th>${tr("Stato","Statut")}</th><th>${tr("Pezzi presenti","Pièces présentes")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(k=>`
           <tr>
@@ -1588,8 +1588,8 @@ function viewCantieri(){
             <td>${badge(k.stato)}</td>
             <td>${state.data.pezzi.filter(p=>p.cantiere_id===k.id).length}</td>
             <td class="actions" style="margin:0;">
-              <button class="secondary btn-doc-cantiere" data-id="${k.id}">📄 Documenti</button>
-              ${puoModificare? `<button class="secondary btn-edit-cantiere" data-id="${k.id}">Modifica</button>` : ""}
+              <button class="secondary btn-doc-cantiere" data-id="${k.id}">📄 ${tr("Documenti","Documents")}</button>
+              ${puoModificare? `<button class="secondary btn-edit-cantiere" data-id="${k.id}">${tr("Modifica","Modifier")}</button>` : ""}
             </td>
           </tr>
         `).join("")}
@@ -1610,18 +1610,18 @@ function wireCantieri(){
       note: document.getElementById("k-note").value.trim() || null,
     };
     const { error } = await sb.from("cantieri").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-edit-cantiere").forEach(b=>{ b.onclick = ()=>editCantiere(b.dataset.id); });
   document.querySelectorAll(".btn-doc-cantiere").forEach(b=>{
     b.onclick = ()=>{
       const k = state.data.cantieri.find(x=>x.id===b.dataset.id);
-      renderModaleDocumenti("cantiere", b.dataset.id, "Documenti — "+(k? k.nome : ""));
+      renderModaleDocumenti("cantiere", b.dataset.id, tr("Documenti","Documents")+" — "+(k? k.nome : ""));
     };
   });
-  wireExportButtons("exp-cantieri", "cantieri", "Cantieri",
-    ["Nome","Cliente","Indirizzo","Referente","Stato","Pezzi presenti"],
+  wireExportButtons("exp-cantieri", "cantieri", tr("Cantieri","Chantiers"),
+    [tr("Nome","Nom"),tr("Cliente","Client"),tr("Indirizzo","Adresse"),tr("Referente","Contact"),tr("Stato","Statut"),tr("Pezzi presenti","Pièces présentes")],
     ()=>state.data.cantieri.map(k=>[k.nome, clienteNome(k.cliente_id), k.indirizzo||"", k.referente||"", statoLabel(k.stato), state.data.pezzi.filter(p=>p.cantiere_id===k.id).length])
   );
 }
@@ -1632,30 +1632,30 @@ function editCantiere(id){
   const body = `
     <form id="form-edit-cantiere">
       <div class="form-grid">
-        <div><label>Cliente *</label><select required id="ek-cliente">${clientiOpts}</select></div>
-        <div><label>Nome cantiere *</label><input required id="ek-nome" value="${escapeHtml(k.nome)}"></div>
-        <div><label>Indirizzo</label><input id="ek-indirizzo" value="${escapeHtml(k.indirizzo||"")}"></div>
-        <div><label>Referente</label><input id="ek-referente" value="${escapeHtml(k.referente||"")}"></div>
-        <div><label>Stato</label>
+        <div><label>${tr("Cliente *","Client *")}</label><select required id="ek-cliente">${clientiOpts}</select></div>
+        <div><label>${tr("Nome cantiere *","Nom du chantier *")}</label><input required id="ek-nome" value="${escapeHtml(k.nome)}"></div>
+        <div><label>${tr("Indirizzo","Adresse")}</label><input id="ek-indirizzo" value="${escapeHtml(k.indirizzo||"")}"></div>
+        <div><label>${tr("Referente","Contact")}</label><input id="ek-referente" value="${escapeHtml(k.referente||"")}"></div>
+        <div><label>${tr("Stato","Statut")}</label>
           <select id="ek-stato">
-            <option value="attivo" ${k.stato==="attivo"?"selected":""}>Attivo</option>
-            <option value="sospeso" ${k.stato==="sospeso"?"selected":""}>Sospeso</option>
-            <option value="concluso" ${k.stato==="concluso"?"selected":""}>Concluso</option>
+            <option value="attivo" ${k.stato==="attivo"?"selected":""}>${tr("Attivo","Actif")}</option>
+            <option value="sospeso" ${k.stato==="sospeso"?"selected":""}>${tr("Sospeso","Suspendu")}</option>
+            <option value="concluso" ${k.stato==="concluso"?"selected":""}>${tr("Concluso","Terminé")}</option>
           </select>
         </div>
       </div>
-      <label>Note</label><textarea id="ek-note">${escapeHtml(k.note||"")}</textarea>
+      <label>${tr("Note","Notes")}</label><textarea id="ek-note">${escapeHtml(k.note||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
-        <button type="submit">Salva modifiche</button>
-        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
-        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina cantiere</button>` : ""}
+        <button type="submit">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">${tr("Annulla","Annuler")}</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">${tr("Elimina cantiere","Supprimer le chantier")}</button>` : ""}
       </div>
     </form>
   `;
-  openModal("Modifica cantiere", body, (bodyEl)=>{
+  openModal(tr("Modifica cantiere","Modifier le chantier"), body, (bodyEl)=>{
     bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
     const btnDel = bodyEl.querySelector("#btn-elimina-edit");
-    if(btnDel) btnDel.onclick = ()=>confirmDelete("cantieri", id, `il cantiere "${k.nome}"`);
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("cantieri", id, tr(`il cantiere "${k.nome}"`,`le chantier "${k.nome}"`));
     bodyEl.querySelector("#form-edit-cantiere").onsubmit = async (e)=>{
       e.preventDefault();
       const payload = {
@@ -1667,7 +1667,7 @@ function editCantiere(id){
         note: bodyEl.querySelector("#ek-note").value.trim() || null,
       };
       const { error } = await sb.from("cantieri").update(payload).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       closeModal();
       render();
     };
@@ -1684,25 +1684,25 @@ function viewMagazzino(){
   return `
     ${!puoModificare? "" : `
     <div class="card">
-      <h2>Nuovo articolo</h2>
+      <h2>${tr("Nuovo articolo","Nouvel article")}</h2>
       <form id="form-articolo">
         <div class="form-grid">
-          <div><label>Codice articolo *</label><input required id="a-codice"></div>
-          <div><label>Descrizione *</label><input required id="a-descrizione"></div>
-          <div><label>Dimensioni</label><input id="a-dimensioni" placeholder="es. 5m x 10cm"></div>
-          <div><label>Peso</label><input id="a-peso" placeholder="es. 2.5 kg"></div>
-          <div><label>Lunghezza per pezzo (m)</label><input type="number" step="0.01" min="0" id="a-lunghezza" placeholder="es. 3 (solo per articoli lineari)"></div>
-          <div><label>URL immagine</label><input id="a-immagine" placeholder="https://..."></div>
+          <div><label>${tr("Codice articolo *","Code article *")}</label><input required id="a-codice"></div>
+          <div><label>${tr("Descrizione *","Description *")}</label><input required id="a-descrizione"></div>
+          <div><label>${tr("Dimensioni","Dimensions")}</label><input id="a-dimensioni" placeholder="${tr("es. 5m x 10cm","ex. 5m x 10cm")}"></div>
+          <div><label>${tr("Peso","Poids")}</label><input id="a-peso" placeholder="${tr("es. 2.5 kg","ex. 2.5 kg")}"></div>
+          <div><label>${tr("Lunghezza per pezzo (m)","Longueur par pièce (m)")}</label><input type="number" step="0.01" min="0" id="a-lunghezza" placeholder="${tr("es. 3 (solo per articoli lineari)","ex. 3 (uniquement pour les articles linéaires)")}"></div>
+          <div><label>${tr("URL immagine","URL de l'image")}</label><input id="a-immagine" placeholder="https://..."></div>
         </div>
-        <label>Note</label><textarea id="a-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Salva articolo</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="a-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Salva articolo","Enregistrer l'article")}</button></div>
       </form>
     </div>`}
     <div class="card">
-      <h2>Catalogo articoli (${rows.length})</h2>
+      <h2>${tr("Catalogo articoli","Catalogue des articles")} (${rows.length})</h2>
       ${exportButtonsHtml("exp-articoli")}
-      ${rows.length===0? `<div class="empty">Nessun articolo inserito.</div>` : `
-      <table><thead><tr><th>Foto</th><th>Codice</th><th>Descrizione</th><th>Dimensioni</th><th>Peso</th><th>Pezzi totali</th><th>Disponibili</th>${puoModificare?"<th></th>":""}</tr></thead>
+      ${rows.length===0? `<div class="empty">${tr("Nessun articolo inserito.","Aucun article saisi.")}</div>` : `
+      <table><thead><tr><th>${tr("Foto","Photo")}</th><th>${tr("Codice","Code")}</th><th>${tr("Descrizione","Description")}</th><th>${tr("Dimensioni","Dimensions")}</th><th>${tr("Peso","Poids")}</th><th>${tr("Pezzi totali","Pièces totales")}</th><th>${tr("Disponibili","Disponibles")}</th>${puoModificare?"<th></th>":""}</tr></thead>
       <tbody>
         ${rows.map(a=>{
           const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
@@ -1715,18 +1715,18 @@ function viewMagazzino(){
             <td>${escapeHtml(a.peso||"-")}</td>
             <td>${pezziArt.length}</td>
             <td>${disp}</td>
-            ${puoModificare? `<td><button class="secondary btn-edit-articolo" data-id="${a.id}">Modifica</button></td>` : ""}
+            ${puoModificare? `<td><button class="secondary btn-edit-articolo" data-id="${a.id}">${tr("Modifica","Modifier")}</button></td>` : ""}
           </tr>`;
         }).join("")}
       </tbody></table>`}
     </div>
     <div class="card">
-      <h2>Calcolo pezzi per metratura</h2>
-      <p><small class="hint">Solo per gli articoli a cui è stata indicata una "Lunghezza per pezzo": dice quanti pezzi servono per raggiungere la metratura richiesta.</small></p>
-      ${articoliConLunghezza.length===0? `<div class="empty">Nessun articolo ha ancora una lunghezza per pezzo impostata. Aggiungila modificando un articolo lineare (es. profili, tubi, pannelli a barra).</div>` : `
+      <h2>${tr("Calcolo pezzi per metratura","Calcul des pièces par métrage")}</h2>
+      <p><small class="hint">${tr('Solo per gli articoli a cui è stata indicata una "Lunghezza per pezzo": dice quanti pezzi servono per raggiungere la metratura richiesta.','Uniquement pour les articles dont la "Longueur par pièce" a été indiquée : indique combien de pièces sont nécessaires pour atteindre le métrage demandé.')}</small></p>
+      ${articoliConLunghezza.length===0? `<div class="empty">${tr("Nessun articolo ha ancora una lunghezza per pezzo impostata. Aggiungila modificando un articolo lineare (es. profili, tubi, pannelli a barra).","Aucun article n'a encore de longueur par pièce définie. Ajoutez-la en modifiant un article linéaire (ex. profilés, tubes, panneaux en barre).")}</div>` : `
       <div class="form-grid">
-        <div><label>Articolo</label><select id="mt-articolo">${articoliConLunghezza.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)} (${a.lunghezza_unitaria} m/pezzo)</option>`).join("")}</select></div>
-        <div><label>Metratura richiesta (m)</label><input type="number" step="0.01" min="0" id="mt-richiesta" value="1"></div>
+        <div><label>${tr("Articolo","Article")}</label><select id="mt-articolo">${articoliConLunghezza.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)} (${a.lunghezza_unitaria} m/${tr("pezzo","pièce")})</option>`).join("")}</select></div>
+        <div><label>${tr("Metratura richiesta (m)","Métrage requis (m)")}</label><input type="number" step="0.01" min="0" id="mt-richiesta" value="1"></div>
       </div>
       <div id="mt-risultato" class="msg ok" style="margin-top:6px;"></div>`}
     </div>
@@ -1746,12 +1746,12 @@ function wireMagazzino(){
       note: document.getElementById("a-note").value.trim() || null,
     };
     const { error } = await sb.from("articoli").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-edit-articolo").forEach(b=>{ b.onclick = ()=>editArticolo(b.dataset.id); });
-  wireExportButtons("exp-articoli", "magazzino", "Magazzino",
-    ["Codice","Descrizione","Dimensioni","Peso","Pezzi totali","Disponibili"],
+  wireExportButtons("exp-articoli", "magazzino", tr("Magazzino","Entrepôt"),
+    [tr("Codice","Code"),tr("Descrizione","Description"),tr("Dimensioni","Dimensions"),tr("Peso","Poids"),tr("Pezzi totali","Pièces totales"),tr("Disponibili","Disponibles")],
     ()=>state.data.articoli.map(a=>{
       const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
       return [a.codice, a.descrizione, a.dimensioni||"", a.peso||"", pezziArt.length, pezziArt.filter(p=>p.stato==="disponibile").length];
@@ -1768,7 +1768,7 @@ function wireMagazzino(){
     const pezziNecessari = Math.ceil(richiesta / a.lunghezza_unitaria);
     const disponibili = state.data.pezzi.filter(p=>p.articolo_id===a.id && p.stato==="disponibile").length;
     risMt.className = "msg " + (pezziNecessari<=disponibili? "ok" : "error");
-    risMt.textContent = `Servono ${pezziNecessari} pezzi da ${a.lunghezza_unitaria} m (totale ${(pezziNecessari*a.lunghezza_unitaria).toFixed(2)} m). Disponibili in magazzino: ${disponibili}.` + (pezziNecessari>disponibili? " Attenzione: non ce ne sono abbastanza in magazzino." : "");
+    risMt.textContent = tr(`Servono ${pezziNecessari} pezzi da ${a.lunghezza_unitaria} m (totale ${(pezziNecessari*a.lunghezza_unitaria).toFixed(2)} m). Disponibili in magazzino: ${disponibili}.`,`Il faut ${pezziNecessari} pièces de ${a.lunghezza_unitaria} m (total ${(pezziNecessari*a.lunghezza_unitaria).toFixed(2)} m). Disponibles en stock : ${disponibili}.`) + (pezziNecessari>disponibili? tr(" Attenzione: non ce ne sono abbastanza in magazzino."," Attention : il n'y en a pas assez en stock.") : "");
   }
   if(selMt){ selMt.onchange = aggiornaMetratura; inputMt.oninput = aggiornaMetratura; aggiornaMetratura(); }
 }
@@ -1778,26 +1778,26 @@ function editArticolo(id){
   const body = `
     <form id="form-edit-articolo">
       <div class="form-grid">
-        <div><label>Codice articolo *</label><input required id="ea-codice" value="${escapeHtml(a.codice)}"></div>
-        <div><label>Descrizione *</label><input required id="ea-descrizione" value="${escapeHtml(a.descrizione)}"></div>
-        <div><label>Dimensioni</label><input id="ea-dimensioni" value="${escapeHtml(a.dimensioni||"")}"></div>
-        <div><label>Peso</label><input id="ea-peso" value="${escapeHtml(a.peso||"")}"></div>
-        <div><label>Lunghezza per pezzo (m)</label><input type="number" step="0.01" min="0" id="ea-lunghezza" value="${a.lunghezza_unitaria!=null?a.lunghezza_unitaria:""}" placeholder="solo per articoli lineari"></div>
-        <div><label>URL immagine</label><input id="ea-immagine" value="${escapeHtml(a.immagine_url||"")}"></div>
+        <div><label>${tr("Codice articolo *","Code article *")}</label><input required id="ea-codice" value="${escapeHtml(a.codice)}"></div>
+        <div><label>${tr("Descrizione *","Description *")}</label><input required id="ea-descrizione" value="${escapeHtml(a.descrizione)}"></div>
+        <div><label>${tr("Dimensioni","Dimensions")}</label><input id="ea-dimensioni" value="${escapeHtml(a.dimensioni||"")}"></div>
+        <div><label>${tr("Peso","Poids")}</label><input id="ea-peso" value="${escapeHtml(a.peso||"")}"></div>
+        <div><label>${tr("Lunghezza per pezzo (m)","Longueur par pièce (m)")}</label><input type="number" step="0.01" min="0" id="ea-lunghezza" value="${a.lunghezza_unitaria!=null?a.lunghezza_unitaria:""}" placeholder="${tr("solo per articoli lineari","uniquement pour les articles linéaires")}"></div>
+        <div><label>${tr("URL immagine","URL de l'image")}</label><input id="ea-immagine" value="${escapeHtml(a.immagine_url||"")}"></div>
       </div>
       ${a.immagine_url? `<img src="${escapeHtml(a.immagine_url)}" alt="" style="max-width:120px;max-height:120px;border-radius:8px;border:1px solid var(--border);margin-top:6px;" onerror="this.style.display='none';">` : ""}
-      <label>Note</label><textarea id="ea-note">${escapeHtml(a.note||"")}</textarea>
+      <label>${tr("Note","Notes")}</label><textarea id="ea-note">${escapeHtml(a.note||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
-        <button type="submit">Salva modifiche</button>
-        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
-        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina articolo</button>` : ""}
+        <button type="submit">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">${tr("Annulla","Annuler")}</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">${tr("Elimina articolo","Supprimer l'article")}</button>` : ""}
       </div>
     </form>
   `;
-  openModal("Modifica articolo", body, (bodyEl)=>{
+  openModal(tr("Modifica articolo","Modifier l'article"), body, (bodyEl)=>{
     bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
     const btnDel = bodyEl.querySelector("#btn-elimina-edit");
-    if(btnDel) btnDel.onclick = ()=>confirmDelete("articoli", id, `l'articolo "${a.codice}"`);
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("articoli", id, tr(`l'articolo "${a.codice}"`,`l'article "${a.codice}"`));
     bodyEl.querySelector("#form-edit-articolo").onsubmit = async (e)=>{
       e.preventDefault();
       const payload = {
@@ -1810,7 +1810,7 @@ function editArticolo(id){
         note: bodyEl.querySelector("#ea-note").value.trim() || null,
       };
       const { error } = await sb.from("articoli").update(payload).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       closeModal();
       render();
     };
@@ -1827,35 +1827,35 @@ function viewPezzi(){
   return `
     ${!puoModificare? "" : `
     <div class="card">
-      <h2>Nuovo pezzo</h2>
-      ${state.data.articoli.length===0? `<div class="msg error">Devi prima creare almeno un articolo nel Magazzino.</div>` : `
+      <h2>${tr("Nuovo pezzo","Nouvelle pièce")}</h2>
+      ${state.data.articoli.length===0? `<div class="msg error">${tr("Devi prima creare almeno un articolo nel Magazzino.","Vous devez d'abord créer au moins un article dans l'Entrepôt.")}</div>` : `
       <form id="form-pezzo">
         <div class="form-grid">
-          <div><label>Articolo *</label><select required id="p-articolo">${articoliOpts}</select></div>
-          <div><label>DTR (codice univoco) *</label>
+          <div><label>${tr("Articolo *","Article *")}</label><select required id="p-articolo">${articoliOpts}</select></div>
+          <div><label>${tr("DTR (codice univoco) *","DTR (code unique) *")}</label>
             <div style="display:flex;gap:6px;">
               <input required id="p-dtr" placeholder="es. DTR-000123" style="flex:1;">
               <button type="button" class="secondary" id="btn-scan-dtr">📷</button>
             </div>
           </div>
-          <div><label>Posizione in magazzino</label><input id="p-posizione" placeholder="es. Scaffale A3"></div>
+          <div><label>${tr("Posizione in magazzino","Emplacement en entrepôt")}</label><input id="p-posizione" placeholder="${tr("es. Scaffale A3","ex. Étagère A3")}"></div>
         </div>
-        <div style="margin-top:10px;"><button type="submit">Salva pezzo</button></div>
+        <div style="margin-top:10px;"><button type="submit">${tr("Salva pezzo","Enregistrer la pièce")}</button></div>
       </form>`}
     </div>`}
     <div class="card">
-      <h2>Elenco pezzi (${rows.length})</h2>
+      <h2>${tr("Elenco pezzi","Liste des pièces")} (${rows.length})</h2>
       <div class="actions">
-        <button class="secondary" id="btn-stampa-etichette-tutte">🏷️ Stampa etichette QR (disponibili)</button>
+        <button class="secondary" id="btn-stampa-etichette-tutte">🏷️ ${tr("Stampa etichette QR (disponibili)","Imprimer étiquettes QR (disponibles)")}</button>
       </div>
       <div class="pill-select" id="filtro-stato">
-        <button data-f="tutti" class="active">Tutti</button>
-        <button data-f="disponibile">Disponibili</button>
-        <button data-f="in_uso">In uso</button>
-        <button data-f="in_revisione">In revisione</button>
-        <button data-f="da_riparare">Da riparare</button>
-        <button data-f="danneggiato">Danneggiati</button>
-        <button data-f="fuori_servizio">Fuori servizio</button>
+        <button data-f="tutti" class="active">${tr("Tutti","Tous")}</button>
+        <button data-f="disponibile">${statoLabel("disponibile")}</button>
+        <button data-f="in_uso">${statoLabel("in_uso")}</button>
+        <button data-f="in_revisione">${statoLabel("in_revisione")}</button>
+        <button data-f="da_riparare">${statoLabel("da_riparare")}</button>
+        <button data-f="danneggiato">${statoLabel("danneggiato")}</button>
+        <button data-f="fuori_servizio">${statoLabel("fuori_servizio")}</button>
       </div>
       <div id="tabella-pezzi"></div>
     </div>
@@ -1865,8 +1865,8 @@ function renderTabellaPezzi(filtro){
   let rows = state.data.pezzi;
   if(filtro && filtro!=="tutti") rows = rows.filter(p=>p.stato===filtro);
   const puoModificare = ["magazzino","admin"].includes(myRole());
-  const html = rows.length===0? `<div class="empty">Nessun pezzo trovato.</div>` : `
-    <table><thead><tr><th>DTR</th><th>Articolo</th><th>Stato</th><th>Posizione</th><th>Cliente/Cantiere</th><th></th></tr></thead>
+  const html = rows.length===0? `<div class="empty">${tr("Nessun pezzo trovato.","Aucune pièce trouvée.")}</div>` : `
+    <table><thead><tr><th>DTR</th><th>${tr("Articolo","Article")}</th><th>${tr("Stato","Statut")}</th><th>${tr("Posizione","Emplacement")}</th><th>${tr("Cliente/Cantiere","Client/Chantier")}</th><th></th></tr></thead>
     <tbody>
       ${rows.map(p=>`
         <tr>
@@ -1877,7 +1877,7 @@ function renderTabellaPezzi(filtro){
           <td>${p.cliente_id? escapeHtml(clienteNome(p.cliente_id))+(p.cantiere_id? " / "+escapeHtml(cantiereNome(p.cantiere_id)) : "") : "-"}</td>
           <td style="white-space:nowrap;">
             <button class="secondary btn-etichetta-pezzo" data-id="${p.id}">🏷️</button>
-            ${puoModificare? `<button class="secondary btn-edit-pezzo" data-id="${p.id}">Modifica</button>` : ""}
+            ${puoModificare? `<button class="secondary btn-edit-pezzo" data-id="${p.id}">${tr("Modifica","Modifier")}</button>` : ""}
           </td>
         </tr>
       `).join("")}
@@ -1902,14 +1902,14 @@ function wirePezzi(){
       stato: "disponibile",
     };
     const { error } = await sb.from("pezzi").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   const btnStampaTutte = document.getElementById("btn-stampa-etichette-tutte");
   if(btnStampaTutte) btnStampaTutte.onclick = ()=>{
     const disponibili = state.data.pezzi.filter(p=>p.stato==="disponibile");
-    if(disponibili.length===0){ alert("Nessun pezzo disponibile da etichettare."); return; }
-    if(disponibili.length>60 && !confirm(`Stai per generare ${disponibili.length} etichette: potrebbe richiedere qualche secondo. Continuare?`)) return;
+    if(disponibili.length===0){ alert(tr("Nessun pezzo disponibile da etichettare.","Aucune pièce disponible à étiqueter.")); return; }
+    if(disponibili.length>60 && !confirm(tr(`Stai per generare ${disponibili.length} etichette: potrebbe richiedere qualche secondo. Continuare?`,`Vous êtes sur le point de générer ${disponibili.length} étiquettes : cela peut prendre quelques secondes. Continuer ?`))) return;
     stampaEtichetteQR(disponibili);
   };
   const btnScanDtr = document.getElementById("btn-scan-dtr");
@@ -1934,25 +1934,25 @@ function editPezzo(id){
   const body = `
     <form id="form-edit-pezzo">
       <div class="form-grid">
-        <div><label>Articolo *</label><select required id="ep-articolo">${articoliOpts}</select></div>
-        <div><label>DTR (codice univoco) *</label>
+        <div><label>${tr("Articolo *","Article *")}</label><select required id="ep-articolo">${articoliOpts}</select></div>
+        <div><label>${tr("DTR (codice univoco) *","DTR (code unique) *")}</label>
           <input required id="ep-dtr" value="${escapeHtml(p.dtr)}" ${soloAdmin? "" : "readonly disabled"}>
-          ${soloAdmin? "" : `<small class="hint">Solo l'amministratore può modificare il codice DTR.</small>`}
+          ${soloAdmin? "" : `<small class="hint">${tr("Solo l'amministratore può modificare il codice DTR.","Seul l'administrateur peut modifier le code DTR.")}</small>`}
         </div>
-        <div><label>Posizione in magazzino</label><input id="ep-posizione" value="${escapeHtml(p.posizione||"")}"></div>
-        <div><label>Stato</label><select id="ep-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
+        <div><label>${tr("Posizione in magazzino","Emplacement en entrepôt")}</label><input id="ep-posizione" value="${escapeHtml(p.posizione||"")}"></div>
+        <div><label>${tr("Stato","Statut")}</label><select id="ep-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
       </div>
       <div class="actions" style="margin-top:14px;">
-        <button type="submit">Salva modifiche</button>
-        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
-        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina pezzo</button>` : ""}
+        <button type="submit">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">${tr("Annulla","Annuler")}</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">${tr("Elimina pezzo","Supprimer la pièce")}</button>` : ""}
       </div>
     </form>
   `;
-  openModal("Modifica pezzo", body, (bodyEl)=>{
+  openModal(tr("Modifica pezzo","Modifier la pièce"), body, (bodyEl)=>{
     bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
     const btnDel = bodyEl.querySelector("#btn-elimina-edit");
-    if(btnDel) btnDel.onclick = ()=>confirmDelete("pezzi", id, `il pezzo "${p.dtr}"`);
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("pezzi", id, tr(`il pezzo "${p.dtr}"`,`la pièce "${p.dtr}"`));
     bodyEl.querySelector("#form-edit-pezzo").onsubmit = async (e)=>{
       e.preventDefault();
       const payload = {
@@ -1963,7 +1963,7 @@ function editPezzo(id){
       };
       if(soloAdmin) payload.dtr = bodyEl.querySelector("#ep-dtr").value.trim();
       const { error } = await sb.from("pezzi").update(payload).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       closeModal();
       render();
     };
@@ -1983,22 +1983,22 @@ function viewServiceOrder(){
   return `
     ${!puoCreare? "" : `
     <div class="card">
-      <h2>Nuovo Service Order</h2>
-      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <h2>${tr("Nuovo Service Order","Nouveau Service Order")}</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">${tr("Devi prima creare almeno un cliente.","Vous devez d'abord créer au moins un client.")}</div>` : `
       <form id="form-so">
         <div class="form-grid">
-          <div><label>Cliente *</label><select required id="so-cliente">${clientiOpts}</select></div>
-          <div><label>Cantiere</label><select id="so-cantiere"><option value="">-- nessuno --</option></select></div>
-          <div><label>Scadenza prevista</label><input type="date" id="so-scadenza"></div>
+          <div><label>${tr("Cliente *","Client *")}</label><select required id="so-cliente">${clientiOpts}</select></div>
+          <div><label>${tr("Cantiere","Chantier")}</label><select id="so-cantiere"><option value="">${tr("-- nessuno --","-- aucun --")}</option></select></div>
+          <div><label>${tr("Scadenza prevista","Échéance prévue")}</label><input type="date" id="so-scadenza"></div>
         </div>
-        <label>Note</label><textarea id="so-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Crea Service Order</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="so-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Crea Service Order","Créer un Service Order")}</button></div>
       </form>`}
     </div>`}
     <div class="card">
-      <h2>Elenco Service Order (${rows.length})</h2>
-      ${rows.length===0? `<div class="empty">Nessun Service Order creato.</div>` : `
-      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Apertura</th><th></th></tr></thead>
+      <h2>${tr("Elenco Service Order","Liste des Service Order")} (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">${tr("Nessun Service Order creato.","Aucun Service Order créé.")}</div>` : `
+      <table><thead><tr><th>${tr("Numero","Numéro")}</th><th>${tr("Cliente","Client")}</th><th>${tr("Cantiere","Chantier")}</th><th>${tr("Stato","Statut")}</th><th>${tr("Apertura","Ouverture")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(s=>`
           <tr>
@@ -2007,7 +2007,7 @@ function viewServiceOrder(){
             <td>${escapeHtml(cantiereNome(s.cantiere_id))}</td>
             <td>${badge(s.stato)}</td>
             <td>${fmtDate(s.data_apertura)}</td>
-            <td><button class="secondary btn-apri-so" data-id="${s.id}">Apri</button></td>
+            <td><button class="secondary btn-apri-so" data-id="${s.id}">${tr("Apri","Ouvrir")}</button></td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -2022,7 +2022,7 @@ function wireServiceOrder(){
     if(!selCliente) return;
     const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
       .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
-    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+    selCantiere.innerHTML = `<option value="">${tr("-- nessuno --","-- aucun --")}</option>` + opts;
   }
   if(selCliente){
     aggiornaCantieri();
@@ -2040,7 +2040,7 @@ function wireServiceOrder(){
       created_by: state.session.user.id,
     };
     const { error } = await sb.from("service_orders").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-apri-so").forEach(b=>{
@@ -2057,81 +2057,81 @@ function viewServiceOrderDettaglio(id){
   const optsDisponibili = pezziDisponibili.map(p=>`<option value="${p.id}">${escapeHtml(p.dtr)} - ${escapeHtml(articoloLabel(p.articolo_id))}</option>`).join("");
   const optsQui = pezziQui.map(p=>`<option value="${p.id}">${escapeHtml(p.dtr)} - ${escapeHtml(articoloLabel(p.articolo_id))}</option>`).join("");
   return `
-    <button class="secondary" id="btn-torna-so">&larr; Torna all'elenco</button>
+    <button class="secondary" id="btn-torna-so">&larr; ${tr("Torna all'elenco","Retour à la liste")}</button>
     <div class="card" style="margin-top:14px;">
       <h2>Service Order #${soNumero(so.numero)} ${badge(so.stato)}</h2>
-      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(so.cliente_id))} &nbsp;
-         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(so.cantiere_id))} &nbsp;
-         <strong>Aperto il:</strong> ${fmtDate(so.data_apertura)}</p>
+      <p><strong>${tr("Cliente:","Client :")}</strong> ${escapeHtml(clienteNome(so.cliente_id))} &nbsp;
+         <strong>${tr("Cantiere:","Chantier :")}</strong> ${escapeHtml(cantiereNome(so.cantiere_id))} &nbsp;
+         <strong>${tr("Aperto il:","Ouvert le :")}</strong> ${fmtDate(so.data_apertura)}</p>
       <p>
-        <strong>Scadenza prevista:</strong>
+        <strong>${tr("Scadenza prevista:","Échéance prévue :")}</strong>
         <input type="date" id="so-scadenza-edit" value="${so.data_scadenza||""}" style="display:inline-block;width:auto;">
-        ${so.data_scadenza && new Date(so.data_scadenza) < new Date(new Date().toDateString()) && so.stato!=="chiuso" && so.stato!=="annullato"? `<span class="badge danneggiato">Scaduto</span>` : ""}
+        ${so.data_scadenza && new Date(so.data_scadenza) < new Date(new Date().toDateString()) && so.stato!=="chiuso" && so.stato!=="annullato"? `<span class="badge danneggiato">${tr("Scaduto","Échu")}</span>` : ""}
       </p>
       ${so.note? `<p><em>${escapeHtml(so.note)}</em></p>` : ""}
       <div class="actions">
-        ${so.stato!=="chiuso" && so.stato!=="annullato" ? `<button class="secondary" id="btn-chiudi-so">Chiudi Service Order</button>` : ""}
-        ${so.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-so">Riapri Service Order</button>` : ""}
-        ${so.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">Solo l'amministratore può riaprire un Service Order chiuso.</small>` : ""}
-        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-so">Elimina Service Order</button>` : ""}
+        ${so.stato!=="chiuso" && so.stato!=="annullato" ? `<button class="secondary" id="btn-chiudi-so">${tr("Chiudi Service Order","Clôturer le Service Order")}</button>` : ""}
+        ${so.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-so">${tr("Riapri Service Order","Rouvrir le Service Order")}</button>` : ""}
+        ${so.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">${tr("Solo l'amministratore può riaprire un Service Order chiuso.","Seul l'administrateur peut rouvrir un Service Order clôturé.")}</small>` : ""}
+        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-so">${tr("Elimina Service Order","Supprimer le Service Order")}</button>` : ""}
       </div>
     </div>
 
     <div class="card">
-      <h2>Carrello - Prelievo materiale</h2>
-      ${pezziDisponibili.length===0? `<div class="empty">Nessun pezzo disponibile in magazzino.</div>` : `
+      <h2>${tr("Carrello - Prelievo materiale","Panier - Retrait de matériel")}</h2>
+      ${pezziDisponibili.length===0? `<div class="empty">${tr("Nessun pezzo disponibile in magazzino.","Aucune pièce disponible en entrepôt.")}</div>` : `
       <form id="form-prelievo">
         <div class="form-grid">
-          <div><label>Pezzo (DTR) disponibile</label>
+          <div><label>${tr("Pezzo (DTR) disponibile","Pièce (DTR) disponible")}</label>
             <div style="display:flex;gap:6px;">
               <select required id="pr-pezzo" style="flex:1;">${optsDisponibili}</select>
-              <button type="button" class="secondary" id="btn-scan-prelievo">📷 Scansiona</button>
+              <button type="button" class="secondary" id="btn-scan-prelievo">📷 ${tr("Scansiona","Scanner")}</button>
             </div>
           </div>
         </div>
-        <button type="submit">Preleva</button>
+        <button type="submit">${tr("Preleva","Retirer")}</button>
       </form>`}
     </div>
 
     <div class="card">
-      <h2>Restituzione materiale</h2>
-      ${pezziQui.length===0? `<div class="empty">Nessun pezzo attualmente presso questo cliente/cantiere.</div>` : `
+      <h2>${tr("Restituzione materiale","Restitution de matériel")}</h2>
+      ${pezziQui.length===0? `<div class="empty">${tr("Nessun pezzo attualmente presso questo cliente/cantiere.","Aucune pièce actuellement chez ce client/chantier.")}</div>` : `
       <form id="form-reso">
         <div class="form-grid">
-          <div><label>Pezzo (DTR) da restituire</label>
+          <div><label>${tr("Pezzo (DTR) da restituire","Pièce (DTR) à restituer")}</label>
             <div style="display:flex;gap:6px;">
               <select required id="re-pezzo" style="flex:1;">${optsQui}</select>
-              <button type="button" class="secondary" id="btn-scan-reso">📷 Scansiona</button>
+              <button type="button" class="secondary" id="btn-scan-reso">📷 ${tr("Scansiona","Scanner")}</button>
             </div>
           </div>
-          <div><label>Nuovo stato del pezzo</label>
+          <div><label>${tr("Nuovo stato del pezzo","Nouveau statut de la pièce")}</label>
             <select id="re-stato">
-              <option value="disponibile">Disponibile</option>
-              <option value="in_revisione">In revisione</option>
-              <option value="da_riparare">Da riparare</option>
-              <option value="danneggiato">Danneggiato</option>
-              <option value="fuori_servizio">Fuori servizio</option>
+              <option value="disponibile">${statoLabel("disponibile")}</option>
+              <option value="in_revisione">${statoLabel("in_revisione")}</option>
+              <option value="da_riparare">${statoLabel("da_riparare")}</option>
+              <option value="danneggiato">${statoLabel("danneggiato")}</option>
+              <option value="fuori_servizio">${statoLabel("fuori_servizio")}</option>
             </select>
           </div>
         </div>
-        <button type="submit">Registra reso</button>
+        <button type="submit">${tr("Registra reso","Enregistrer le retour")}</button>
       </form>`}
     </div>
 
     <div class="card">
-      <h2>Storico movimenti (${righe.length})</h2>
-      ${righe.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
-      <table><thead><tr><th>Data</th><th>Azione</th><th>Pezzo</th></tr></thead>
+      <h2>${tr("Storico movimenti","Historique des mouvements")} (${righe.length})</h2>
+      ${righe.length===0? `<div class="empty">${tr("Nessun movimento registrato.","Aucun mouvement enregistré.")}</div>` : `
+      <table><thead><tr><th>${tr("Data","Date")}</th><th>${tr("Azione","Action")}</th><th>${tr("Pezzo","Pièce")}</th></tr></thead>
       <tbody>
-        ${righe.map(r=>`<tr><td>${fmtDate(r.data)}</td><td>${r.azione==="prelievo"?"Prelievo":"Reso"}</td><td>${escapeHtml(pezzoLabel(r.pezzo_id))}</td></tr>`).join("")}
+        ${righe.map(r=>`<tr><td>${fmtDate(r.data)}</td><td>${r.azione==="prelievo"?tr("Prelievo","Retrait"):tr("Reso","Retour")}</td><td>${escapeHtml(pezzoLabel(r.pezzo_id))}</td></tr>`).join("")}
       </tbody></table>`}
     </div>
 
     <div class="card">
-      <h2>Commenti e comunicazioni interne</h2>
+      <h2>${tr("Commenti e comunicazioni interne","Commentaires et communications internes")}</h2>
       <form id="form-commento-so">
-        <textarea id="cm-testo" placeholder="Scrivi una nota o un aggiornamento per gli altri colleghi su questo Service Order..." required></textarea>
-        <div style="margin-top:10px;"><button type="submit">Aggiungi commento</button></div>
+        <textarea id="cm-testo" placeholder="${tr("Scrivi una nota o un aggiornamento per gli altri colleghi su questo Service Order...","Écrivez une note ou une mise à jour pour vos collègues sur ce Service Order...")}" required></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Aggiungi commento","Ajouter un commentaire")}</button></div>
       </form>
       <div id="lista-commenti-so" style="margin-top:14px;"></div>
     </div>
@@ -2139,12 +2139,12 @@ function viewServiceOrderDettaglio(id){
 }
 function renderCommentiSO(id){
   const commenti = state.data.commentiSO.filter(c=>c.service_order_id===id);
-  const html = commenti.length===0? `<div class="empty">Nessun commento ancora.</div>` : commenti.map(c=>{
+  const html = commenti.length===0? `<div class="empty">${tr("Nessun commento ancora.","Aucun commentaire pour l'instant.")}</div>` : commenti.map(c=>{
     const autore = state.data.profiles.find(p=>p.id===c.creato_da);
     return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
       <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
-        <span>${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(c.created_at)}</span>
-        ${myRole()==="admin"? `<button class="secondary btn-elimina-commento-so" data-id="${c.id}" style="padding:2px 8px;font-size:11px;">Elimina</button>` : ""}
+        <span>${escapeHtml(autore? autore.full_name : tr("Utente","Utilisateur"))} — ${fmtDate(c.created_at)}</span>
+        ${myRole()==="admin"? `<button class="secondary btn-elimina-commento-so" data-id="${c.id}" style="padding:2px 8px;font-size:11px;">${tr("Elimina","Supprimer")}</button>` : ""}
       </div>
       <div>${escapeHtml(c.testo)}</div>
     </div>`;
@@ -2153,7 +2153,7 @@ function renderCommentiSO(id){
   if(!el) return;
   el.innerHTML = html;
   el.querySelectorAll(".btn-elimina-commento-so").forEach(b=>{
-    b.onclick = ()=>confirmDelete("commenti_service_order", b.dataset.id, "questo commento");
+    b.onclick = ()=>confirmDelete("commenti_service_order", b.dataset.id, tr("questo commento","ce commentaire"));
   });
 }
 function wireServiceOrderDettaglio(id){
@@ -2166,28 +2166,28 @@ function wireServiceOrderDettaglio(id){
     const testo = document.getElementById("cm-testo").value.trim();
     if(!testo) return;
     const { error } = await sb.from("commenti_service_order").insert({ service_order_id: id, testo, creato_da: state.session.user.id });
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   const btnChiudi = document.getElementById("btn-chiudi-so");
   if(btnChiudi) btnChiudi.onclick = async ()=>{
     const { error } = await sb.from("service_orders").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   const btnRiapri = document.getElementById("btn-riapri-so");
   if(btnRiapri) btnRiapri.onclick = async ()=>{
-    if(!confirm("Riaprire questo Service Order?")) return;
+    if(!confirm(tr("Riaprire questo Service Order?","Rouvrir ce Service Order ?"))) return;
     const { error } = await sb.from("service_orders").update({ stato:"aperto", data_chiusura: null }).eq("id", id);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   const btnEliminaSo = document.getElementById("btn-elimina-so");
-  if(btnEliminaSo) btnEliminaSo.onclick = ()=>confirmDelete("service_orders", id, `il Service Order #${soNumero(so.numero)}`, ()=>{ state.soAperto=null; });
+  if(btnEliminaSo) btnEliminaSo.onclick = ()=>confirmDelete("service_orders", id, tr(`il Service Order #${soNumero(so.numero)}`,`le Service Order #${soNumero(so.numero)}`), ()=>{ state.soAperto=null; });
   const inputScadenza = document.getElementById("so-scadenza-edit");
   if(inputScadenza) inputScadenza.onchange = async ()=>{
     const { error } = await sb.from("service_orders").update({ data_scadenza: inputScadenza.value || null }).eq("id", id);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   function scansionaESeleziona(selectId){
@@ -2196,7 +2196,7 @@ function wireServiceOrderDettaglio(id){
       if(!sel) return;
       const opt = Array.from(sel.options).find(o=>o.textContent.toLowerCase().includes(testo.toLowerCase()));
       if(opt) sel.value = opt.value;
-      else alert("Nessun pezzo trovato in elenco con il codice: "+testo);
+      else alert(tr("Nessun pezzo trovato in elenco con il codice: ","Aucune pièce trouvée dans la liste avec le code : ")+testo);
     });
   }
   const btnScanPrelievo = document.getElementById("btn-scan-prelievo");
@@ -2210,9 +2210,9 @@ function wireServiceOrderDettaglio(id){
     const { error: e1 } = await sb.from("pezzi").update({
       stato:"in_uso", cliente_id: so.cliente_id, cantiere_id: so.cantiere_id, updated_at: new Date().toISOString()
     }).eq("id", pezzoId);
-    if(e1){ alert("Errore: "+e1.message); return; }
+    if(e1){ alert(tr("Errore: ","Erreur : ")+e1.message); return; }
     const { error: e2 } = await sb.from("service_order_righe").insert({ service_order_id: id, pezzo_id: pezzoId, azione:"prelievo" });
-    if(e2){ alert("Errore: "+e2.message); return; }
+    if(e2){ alert(tr("Errore: ","Erreur : ")+e2.message); return; }
     render();
   };
   const fReso = document.getElementById("form-reso");
@@ -2223,9 +2223,9 @@ function wireServiceOrderDettaglio(id){
     const { error: e1 } = await sb.from("pezzi").update({
       stato: nuovoStato, cliente_id: null, cantiere_id: null, updated_at: new Date().toISOString()
     }).eq("id", pezzoId);
-    if(e1){ alert("Errore: "+e1.message); return; }
+    if(e1){ alert(tr("Errore: ","Erreur : ")+e1.message); return; }
     const { error: e2 } = await sb.from("service_order_righe").insert({ service_order_id: id, pezzo_id: pezzoId, azione:"reso" });
-    if(e2){ alert("Errore: "+e2.message); return; }
+    if(e2){ alert(tr("Errore: ","Erreur : ")+e2.message); return; }
     render();
   };
 }
@@ -2238,10 +2238,10 @@ function viewListino(){
   const rows = state.data.articoli;
   return `
     <div class="card">
-      <h2>Listino prezzi</h2>
-      <p><small class="hint">Un prezzo per ogni articolo: vendita, noleggio (giorno/settimana/mese) e IVA.</small></p>
-      ${rows.length===0? `<div class="empty">Nessun articolo a catalogo. Creane uno nel Magazzino.</div>` : `
-      <table><thead><tr><th>Articolo</th><th>Vendita</th><th>Noleggio/giorno</th><th>Noleggio/settimana</th><th>Noleggio/mese</th><th>IVA %</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <h2>${tr("Listino prezzi","Liste des prix")}</h2>
+      <p><small class="hint">${tr("Un prezzo per ogni articolo: vendita, noleggio (giorno/settimana/mese) e IVA.","Un prix pour chaque article : vente, location (jour/semaine/mois) et TVA.")}</small></p>
+      ${rows.length===0? `<div class="empty">${tr("Nessun articolo a catalogo. Creane uno nel Magazzino.","Aucun article au catalogue. Créez-en un dans l'Entrepôt.")}</div>` : `
+      <table><thead><tr><th>${tr("Articolo","Article")}</th><th>${tr("Vendita","Vente")}</th><th>${tr("Noleggio/giorno","Location/jour")}</th><th>${tr("Noleggio/settimana","Location/semaine")}</th><th>${tr("Noleggio/mese","Location/mois")}</th><th>${tr("IVA %","TVA %")}</th>${puoModificare?"<th></th>":""}</tr></thead>
       <tbody>
         ${rows.map(a=>{
           const l = prezzoArticolo(a.id) || {};
@@ -2262,7 +2262,7 @@ function viewListino(){
             <td><input type="number" step="0.01" class="lp-settimana" value="${l.prezzo_noleggio_settimanale??""}" style="width:90px;"></td>
             <td><input type="number" step="0.01" class="lp-mese" value="${l.prezzo_noleggio_mensile??""}" style="width:90px;"></td>
             <td><input type="number" step="0.01" class="lp-iva" value="${l.iva_percentuale??22}" style="width:70px;"></td>
-            <td><button class="secondary btn-salva-prezzo" data-id="${a.id}">Salva</button></td>
+            <td><button class="secondary btn-salva-prezzo" data-id="${a.id}">${tr("Salva","Enregistrer")}</button></td>
           </tr>`;
         }).join("")}
       </tbody></table>`}
@@ -2272,22 +2272,22 @@ function viewListino(){
 function wireListino(){
   document.querySelectorAll(".btn-salva-prezzo").forEach(btn=>{
     btn.onclick = async ()=>{
-      const tr = btn.closest("tr");
+      const row = btn.closest("tr");
       const payload = {
         articolo_id: btn.dataset.id,
-        prezzo_vendita: parseFloat(tr.querySelector(".lp-vendita").value) || null,
-        prezzo_noleggio_giornaliero: parseFloat(tr.querySelector(".lp-giorno").value) || null,
-        prezzo_noleggio_settimanale: parseFloat(tr.querySelector(".lp-settimana").value) || null,
-        prezzo_noleggio_mensile: parseFloat(tr.querySelector(".lp-mese").value) || null,
-        iva_percentuale: parseFloat(tr.querySelector(".lp-iva").value) || 0,
+        prezzo_vendita: parseFloat(row.querySelector(".lp-vendita").value) || null,
+        prezzo_noleggio_giornaliero: parseFloat(row.querySelector(".lp-giorno").value) || null,
+        prezzo_noleggio_settimanale: parseFloat(row.querySelector(".lp-settimana").value) || null,
+        prezzo_noleggio_mensile: parseFloat(row.querySelector(".lp-mese").value) || null,
+        iva_percentuale: parseFloat(row.querySelector(".lp-iva").value) || 0,
         updated_at: new Date().toISOString(),
       };
       const originalLabel = btn.textContent;
       btn.disabled = true;
-      btn.textContent = "Salvataggio...";
+      btn.textContent = tr("Salvataggio...","Enregistrement...");
       const { data, error } = await sb.from("listino_prezzi").upsert(payload, { onConflict: "articolo_id" }).select();
       if(error){
-        alert("Errore nel salvataggio: "+error.message+"\n\n(Codice: "+(error.code||"n/d")+")");
+        alert(tr("Errore nel salvataggio: ","Erreur lors de l'enregistrement : ")+error.message+"\n\n("+tr("Codice","Code")+": "+(error.code||tr("n/d","n/d"))+")");
         btn.disabled = false;
         btn.textContent = originalLabel;
         return;
@@ -2296,7 +2296,7 @@ function wireListino(){
         const idx = state.data.listino.findIndex(l=>l.articolo_id===payload.articolo_id);
         if(idx>=0) state.data.listino[idx] = data[0]; else state.data.listino.push(data[0]);
       }
-      btn.textContent = "✓ Salvato";
+      btn.textContent = "✓ "+tr("Salvato","Enregistré");
       setTimeout(()=>{ btn.disabled=false; btn.textContent = originalLabel; }, 1500);
     };
   });
@@ -2313,22 +2313,22 @@ function viewPreventivi(){
   return `
     ${!puoModificare? "" : `
     <div class="card">
-      <h2>Nuovo preventivo</h2>
-      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <h2>${tr("Nuovo preventivo","Nouveau devis")}</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">${tr("Devi prima creare almeno un cliente.","Vous devez d'abord créer au moins un client.")}</div>` : `
       <form id="form-preventivo">
         <div class="form-grid">
-          <div><label>Cliente *</label><select required id="pv-cliente">${clientiOpts}</select></div>
-          <div><label>Cantiere</label><select id="pv-cantiere"><option value="">-- nessuno --</option></select></div>
-          <div><label>Sconto complessivo %</label><input type="number" step="0.01" id="pv-sconto" value="0"></div>
+          <div><label>${tr("Cliente *","Client *")}</label><select required id="pv-cliente">${clientiOpts}</select></div>
+          <div><label>${tr("Cantiere","Chantier")}</label><select id="pv-cantiere"><option value="">${tr("-- nessuno --","-- aucun --")}</option></select></div>
+          <div><label>${tr("Sconto complessivo %","Remise globale %")}</label><input type="number" step="0.01" id="pv-sconto" value="0"></div>
         </div>
-        <label>Note</label><textarea id="pv-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Crea preventivo</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="pv-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Crea preventivo","Créer un devis")}</button></div>
       </form>`}
     </div>`}
     <div class="card">
-      <h2>Elenco preventivi (${rows.length})</h2>
-      ${rows.length===0? `<div class="empty">Nessun preventivo creato.</div>` : `
-      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Totale</th><th></th></tr></thead>
+      <h2>${tr("Elenco preventivi","Liste des devis")} (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">${tr("Nessun preventivo creato.","Aucun devis créé.")}</div>` : `
+      <table><thead><tr><th>${tr("Numero","Numéro")}</th><th>${tr("Cliente","Client")}</th><th>${tr("Cantiere","Chantier")}</th><th>${tr("Stato","Statut")}</th><th>${tr("Totale","Total")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(p=>`
           <tr>
@@ -2337,7 +2337,7 @@ function viewPreventivi(){
             <td>${escapeHtml(cantiereNome(p.cantiere_id))}</td>
             <td><span class="badge ${statoPreventivoLabelClass(p.stato)}">${statoPreventivoLabel(p.stato)}</span></td>
             <td>${fmtMoney(totalePreventivo(p.id))}</td>
-            <td><button class="secondary btn-apri-pv" data-id="${p.id}">Apri</button></td>
+            <td><button class="secondary btn-apri-pv" data-id="${p.id}">${tr("Apri","Ouvrir")}</button></td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -2352,7 +2352,7 @@ function wirePreventivi(){
     if(!selCliente) return;
     const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
       .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
-    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+    selCantiere.innerHTML = `<option value="">${tr("-- nessuno --","-- aucun --")}</option>` + opts;
   }
   if(selCliente){ aggiornaCantieri(); selCliente.onchange = aggiornaCantieri; }
   const f = document.getElementById("form-preventivo");
@@ -2367,7 +2367,7 @@ function wirePreventivi(){
       created_by: state.session.user.id,
     };
     const { error } = await sb.from("preventivi").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-apri-pv").forEach(b=>{
@@ -2390,7 +2390,7 @@ function stampaPreventivo(id){
       <td style="text-align:right;">${fmtMoney(totaleRiga(r))}</td>
     </tr>`).join("");
   const html = `<!DOCTYPE html>
-<html lang="it"><head><meta charset="UTF-8"><title>Preventivo #${pv.numero}</title>
+<html lang="it"><head><meta charset="UTF-8"><title>${tr("Preventivo","Devis")} #${pv.numero}</title>
 <style>
   body{font-family:Arial,Helvetica,sans-serif;color:#1c2530;margin:40px;}
   h1{font-size:22px;margin-bottom:0;}
@@ -2404,26 +2404,26 @@ function stampaPreventivo(id){
   @media print{ button{display:none;} }
 </style></head>
 <body>
-  <h1>Preventivo #${pv.numero}</h1>
-  <p class="sub">Data: ${fmtDate(pv.data_creazione)} — Stato: ${statoPreventivoLabel(pv.stato)}</p>
+  <h1>${tr("Preventivo","Devis")} #${pv.numero}</h1>
+  <p class="sub">${tr("Data","Date")}: ${fmtDate(pv.data_creazione)} — ${tr("Stato","Statut")}: ${statoPreventivoLabel(pv.stato)}</p>
   <div class="box">
-    <strong>Cliente:</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
-    ${cliente.referente? `Referente: ${escapeHtml(cliente.referente)}<br>` : ""}
-    ${cliente.indirizzo? `Indirizzo: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
-    ${cliente.piva? `P.IVA: ${escapeHtml(cliente.piva)}<br>` : ""}
-    ${pv.cantiere_id? `Cantiere: ${escapeHtml(cantiereNome(pv.cantiere_id))}<br>` : ""}
+    <strong>${tr("Cliente:","Client :")}</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
+    ${cliente.referente? `${tr("Referente","Contact")}: ${escapeHtml(cliente.referente)}<br>` : ""}
+    ${cliente.indirizzo? `${tr("Indirizzo","Adresse")}: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
+    ${cliente.piva? `${tr("P.IVA","N° TVA")}: ${escapeHtml(cliente.piva)}<br>` : ""}
+    ${pv.cantiere_id? `${tr("Cantiere","Chantier")}: ${escapeHtml(cantiereNome(pv.cantiere_id))}<br>` : ""}
   </div>
   ${pv.note? `<p><em>${escapeHtml(pv.note)}</em></p>` : ""}
   <table>
-    <thead><tr><th>Articolo</th><th>Tipo</th><th style="text-align:right;">Quantità</th><th style="text-align:right;">Prezzo unit.</th><th style="text-align:right;">Sconto</th><th style="text-align:right;">Totale</th></tr></thead>
+    <thead><tr><th>${tr("Articolo","Article")}</th><th>${tr("Tipo","Type")}</th><th style="text-align:right;">${tr("Quantità","Quantité")}</th><th style="text-align:right;">${tr("Prezzo unit.","Prix unit.")}</th><th style="text-align:right;">${tr("Sconto","Remise")}</th><th style="text-align:right;">${tr("Totale","Total")}</th></tr></thead>
     <tbody>${righeHtml}</tbody>
   </table>
-  ${pv.sconto_percentuale? `<p style="text-align:right;margin-top:10px;">Sconto complessivo: ${pv.sconto_percentuale}%</p>` : ""}
-  <p class="tot">Totale: ${fmtMoney(totalePreventivo(id))}</p>
-  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">Stampa questa pagina</button>
+  ${pv.sconto_percentuale? `<p style="text-align:right;margin-top:10px;">${tr("Sconto complessivo","Remise globale")}: ${pv.sconto_percentuale}%</p>` : ""}
+  <p class="tot">${tr("Totale","Total")}: ${fmtMoney(totalePreventivo(id))}</p>
+  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">${tr("Stampa questa pagina","Imprimer cette page")}</button>
 </body></html>`;
   const w = window.open("", "_blank");
-  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  if(!w){ alert(tr("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova.","Le navigateur a bloqué l'ouverture de la fenêtre. Autorisez les pop-ups pour ce site et réessayez.")); return; }
   w.document.open();
   w.document.write(html);
   w.document.close();
@@ -2438,28 +2438,28 @@ function viewPreventivoDettaglio(id){
   const soCollegato = state.data.serviceOrders.find(s=>s.preventivo_id===id);
   return `
     <div class="actions" style="margin-bottom:0;">
-      <button class="secondary" id="btn-torna-pv">&larr; Torna all'elenco</button>
-      <button class="secondary" id="btn-stampa-pv">🖨️ Stampa / PDF</button>
-      ${myRole()==="admin"? `<button class="danger" id="btn-elimina-pv">Elimina preventivo</button>` : ""}
+      <button class="secondary" id="btn-torna-pv">&larr; ${tr("Torna all'elenco","Retour à la liste")}</button>
+      <button class="secondary" id="btn-stampa-pv">🖨️ ${tr("Stampa / PDF","Imprimer / PDF")}</button>
+      ${myRole()==="admin"? `<button class="danger" id="btn-elimina-pv">${tr("Elimina preventivo","Supprimer le devis")}</button>` : ""}
     </div>
     <div class="card" style="margin-top:14px;">
-      <h2>Preventivo #${pv.numero} <span class="badge ${statoPreventivoLabelClass(pv.stato)}">${statoPreventivoLabel(pv.stato)}</span></h2>
-      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(pv.cliente_id))} &nbsp;
-         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(pv.cantiere_id))} &nbsp;
-         <strong>Sconto complessivo:</strong> ${pv.sconto_percentuale||0}%</p>
+      <h2>${tr("Preventivo","Devis")} #${pv.numero} <span class="badge ${statoPreventivoLabelClass(pv.stato)}">${statoPreventivoLabel(pv.stato)}</span></h2>
+      <p><strong>${tr("Cliente:","Client :")}</strong> ${escapeHtml(clienteNome(pv.cliente_id))} &nbsp;
+         <strong>${tr("Cantiere:","Chantier :")}</strong> ${escapeHtml(cantiereNome(pv.cantiere_id))} &nbsp;
+         <strong>${tr("Sconto complessivo:","Remise globale :")}</strong> ${pv.sconto_percentuale||0}%</p>
       ${pv.note? `<p><em>${escapeHtml(pv.note)}</em></p>` : ""}
       ${puoModificare? `
       <div class="actions">
-        ${pv.stato==="bozza"? `<button class="secondary btn-stato-pv" data-stato="inviato">Segna come inviato</button>` : ""}
-        ${pv.stato==="inviato"? `<button class="secondary btn-stato-pv" data-stato="accettato">Segna come accettato</button><button class="secondary btn-stato-pv" data-stato="rifiutato">Segna come rifiutato</button>` : ""}
-        ${pv.stato==="accettato" && !soCollegato? `<button id="btn-crea-so-da-pv">Crea Service Order da questo preventivo</button>` : ""}
-        ${soCollegato? `<span class="hint">Service Order collegato: #${soNumero(soCollegato.numero)}</span>` : ""}
+        ${pv.stato==="bozza"? `<button class="secondary btn-stato-pv" data-stato="inviato">${tr("Segna come inviato","Marquer comme envoyé")}</button>` : ""}
+        ${pv.stato==="inviato"? `<button class="secondary btn-stato-pv" data-stato="accettato">${tr("Segna come accettato","Marquer comme accepté")}</button><button class="secondary btn-stato-pv" data-stato="rifiutato">${tr("Segna come rifiutato","Marquer comme refusé")}</button>` : ""}
+        ${pv.stato==="accettato" && !soCollegato? `<button id="btn-crea-so-da-pv">${tr("Crea Service Order da questo preventivo","Créer un Service Order à partir de ce devis")}</button>` : ""}
+        ${soCollegato? `<span class="hint">${tr("Service Order collegato:","Service Order lié :")} #${soNumero(soCollegato.numero)}</span>` : ""}
       </div>` : ""}
     </div>
     <div class="card">
-      <h2>Righe (${righe.length}) — Totale: ${fmtMoney(totalePreventivo(id))}</h2>
-      ${righe.length===0? `<div class="empty">Nessuna riga aggiunta.</div>` : `
-      <table><thead><tr><th>Articolo</th><th>Tipo</th><th>Quantità</th><th>Prezzo unit.</th><th>Sconto %</th><th>Totale riga</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <h2>${tr("Righe","Lignes")} (${righe.length}) — ${tr("Totale:","Total :")} ${fmtMoney(totalePreventivo(id))}</h2>
+      ${righe.length===0? `<div class="empty">${tr("Nessuna riga aggiunta.","Aucune ligne ajoutée.")}</div>` : `
+      <table><thead><tr><th>${tr("Articolo","Article")}</th><th>${tr("Tipo","Type")}</th><th>${tr("Quantità","Quantité")}</th><th>${tr("Prezzo unit.","Prix unit.")}</th><th>${tr("Sconto %","Remise %")}</th><th>${tr("Totale riga","Total ligne")}</th>${puoModificare?"<th></th>":""}</tr></thead>
       <tbody>
         ${righe.map(r=>`
           <tr>
@@ -2469,28 +2469,28 @@ function viewPreventivoDettaglio(id){
             <td>${fmtMoney(r.prezzo_unitario)}</td>
             <td>${r.sconto_percentuale||0}%</td>
             <td>${fmtMoney(totaleRiga(r))}</td>
-            ${puoModificare? `<td><button class="secondary btn-rimuovi-riga" data-id="${r.id}">Rimuovi</button></td>` : ""}
+            ${puoModificare? `<td><button class="secondary btn-rimuovi-riga" data-id="${r.id}">${tr("Rimuovi","Supprimer")}</button></td>` : ""}
           </tr>
         `).join("")}
       </tbody></table>`}
       ${puoModificare? `
-      <h3 style="margin-top:18px;">Aggiungi riga</h3>
+      <h3 style="margin-top:18px;">${tr("Aggiungi riga","Ajouter une ligne")}</h3>
       <form id="form-riga-pv">
         <div class="form-grid">
-          <div><label>Articolo *</label><select required id="rp-articolo">${articoliOpts}</select></div>
-          <div><label>Tipo prezzo</label>
+          <div><label>${tr("Articolo *","Article *")}</label><select required id="rp-articolo">${articoliOpts}</select></div>
+          <div><label>${tr("Tipo prezzo","Type de prix")}</label>
             <select id="rp-tipo">
-              <option value="vendita">Vendita</option>
-              <option value="noleggio_giornaliero">Noleggio giorno</option>
-              <option value="noleggio_settimanale">Noleggio settimana</option>
-              <option value="noleggio_mensile">Noleggio mese</option>
+              <option value="vendita">${tr("Vendita","Vente")}</option>
+              <option value="noleggio_giornaliero">${tr("Noleggio giorno","Location jour")}</option>
+              <option value="noleggio_settimanale">${tr("Noleggio settimana","Location semaine")}</option>
+              <option value="noleggio_mensile">${tr("Noleggio mese","Location mois")}</option>
             </select>
           </div>
-          <div><label>Quantità</label><input type="number" step="0.01" id="rp-quantita" value="1"></div>
-          <div><label>Prezzo unitario</label><input type="number" step="0.01" id="rp-prezzo" required></div>
-          <div><label>Sconto %</label><input type="number" step="0.01" id="rp-sconto" value="0"></div>
+          <div><label>${tr("Quantità","Quantité")}</label><input type="number" step="0.01" id="rp-quantita" value="1"></div>
+          <div><label>${tr("Prezzo unitario","Prix unitaire")}</label><input type="number" step="0.01" id="rp-prezzo" required></div>
+          <div><label>${tr("Sconto %","Remise %")}</label><input type="number" step="0.01" id="rp-sconto" value="0"></div>
         </div>
-        <button type="submit">Aggiungi riga</button>
+        <button type="submit">${tr("Aggiungi riga","Ajouter la ligne")}</button>
       </form>` : ""}
     </div>
   `;
@@ -2501,12 +2501,12 @@ function wirePreventivoDettaglio(id){
   const btnEliminaPv = document.getElementById("btn-elimina-pv");
   if(btnEliminaPv){
     const pv = state.data.preventivi.find(p=>p.id===id);
-    btnEliminaPv.onclick = ()=>confirmDelete("preventivi", id, `il preventivo #${pv? pv.numero : ""}`, ()=>{ state.preventivoAperto=null; });
+    btnEliminaPv.onclick = ()=>confirmDelete("preventivi", id, tr(`il preventivo #${pv? pv.numero : ""}`,`le devis #${pv? pv.numero : ""}`), ()=>{ state.preventivoAperto=null; });
   }
   document.querySelectorAll(".btn-stato-pv").forEach(b=>{
     b.onclick = async ()=>{
       const { error } = await sb.from("preventivi").update({ stato: b.dataset.stato }).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       render();
     };
   });
@@ -2517,7 +2517,7 @@ function wirePreventivoDettaglio(id){
       cliente_id: pv.cliente_id, cantiere_id: pv.cantiere_id, preventivo_id: pv.id,
       stato: "aperto", created_by: state.session.user.id,
     });
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   const rpArticolo = document.getElementById("rp-articolo");
@@ -2544,13 +2544,13 @@ function wirePreventivoDettaglio(id){
       sconto_percentuale: parseFloat(document.getElementById("rp-sconto").value) || 0,
     };
     const { error } = await sb.from("preventivo_righe").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-rimuovi-riga").forEach(b=>{
     b.onclick = async ()=>{
       const { error } = await sb.from("preventivo_righe").delete().eq("id", b.dataset.id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       render();
     };
   });
@@ -2563,24 +2563,24 @@ function viewFornitori(){
   const rows = state.data.fornitori;
   return `
     <div class="card">
-      <h2>Nuovo fornitore</h2>
+      <h2>${tr("Nuovo fornitore","Nouveau fournisseur")}</h2>
       <form id="form-fornitore">
         <div class="form-grid">
-          <div><label>Ragione sociale *</label><input required id="f-ragione"></div>
-          <div><label>Referente</label><input id="f-referente"></div>
-          <div><label>Telefono</label><input id="f-telefono"></div>
+          <div><label>${tr("Ragione sociale *","Raison sociale *")}</label><input required id="f-ragione"></div>
+          <div><label>${tr("Referente","Contact")}</label><input id="f-referente"></div>
+          <div><label>${tr("Telefono","Téléphone")}</label><input id="f-telefono"></div>
           <div><label>Email</label><input type="email" id="f-email"></div>
-          <div><label>Indirizzo</label><input id="f-indirizzo"></div>
-          <div><label>Partita IVA</label><input id="f-piva"></div>
+          <div><label>${tr("Indirizzo","Adresse")}</label><input id="f-indirizzo"></div>
+          <div><label>${tr("Partita IVA","Numéro de TVA")}</label><input id="f-piva"></div>
         </div>
-        <label>Note</label><textarea id="f-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Salva fornitore</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="f-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Salva fornitore","Enregistrer le fournisseur")}</button></div>
       </form>
     </div>
     <div class="card">
-      <h2>Elenco fornitori (${rows.length})</h2>
-      ${rows.length===0? `<div class="empty">Nessun fornitore inserito.</div>` : `
-      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th><th></th></tr></thead>
+      <h2>${tr("Elenco fornitori","Liste des fournisseurs")} (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">${tr("Nessun fornitore inserito.","Aucun fournisseur saisi.")}</div>` : `
+      <table><thead><tr><th>${tr("Ragione sociale","Raison sociale")}</th><th>${tr("Referente","Contact")}</th><th>${tr("Telefono","Téléphone")}</th><th>Email</th><th>${tr("P.IVA","N° TVA")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(f=>`
           <tr>
@@ -2589,7 +2589,7 @@ function viewFornitori(){
             <td>${escapeHtml(f.telefono||"-")}</td>
             <td>${escapeHtml(f.email||"-")}</td>
             <td>${escapeHtml(f.piva||"-")}</td>
-            <td><button class="secondary btn-edit-fornitore" data-id="${f.id}">Modifica</button></td>
+            <td><button class="secondary btn-edit-fornitore" data-id="${f.id}">${tr("Modifica","Modifier")}</button></td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -2611,7 +2611,7 @@ function wireFornitori(){
       created_by: state.session.user.id,
     };
     const { error } = await sb.from("fornitori").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-edit-fornitore").forEach(b=>{ b.onclick = ()=>editFornitore(b.dataset.id); });
@@ -2622,25 +2622,25 @@ function editFornitore(id){
   const body = `
     <form id="form-edit-fornitore">
       <div class="form-grid">
-        <div><label>Ragione sociale *</label><input required id="ef-ragione" value="${escapeHtml(f.ragione_sociale)}"></div>
-        <div><label>Referente</label><input id="ef-referente" value="${escapeHtml(f.referente||"")}"></div>
-        <div><label>Telefono</label><input id="ef-telefono" value="${escapeHtml(f.telefono||"")}"></div>
+        <div><label>${tr("Ragione sociale *","Raison sociale *")}</label><input required id="ef-ragione" value="${escapeHtml(f.ragione_sociale)}"></div>
+        <div><label>${tr("Referente","Contact")}</label><input id="ef-referente" value="${escapeHtml(f.referente||"")}"></div>
+        <div><label>${tr("Telefono","Téléphone")}</label><input id="ef-telefono" value="${escapeHtml(f.telefono||"")}"></div>
         <div><label>Email</label><input type="email" id="ef-email" value="${escapeHtml(f.email||"")}"></div>
-        <div><label>Indirizzo</label><input id="ef-indirizzo" value="${escapeHtml(f.indirizzo||"")}"></div>
-        <div><label>Partita IVA</label><input id="ef-piva" value="${escapeHtml(f.piva||"")}"></div>
+        <div><label>${tr("Indirizzo","Adresse")}</label><input id="ef-indirizzo" value="${escapeHtml(f.indirizzo||"")}"></div>
+        <div><label>${tr("Partita IVA","Numéro de TVA")}</label><input id="ef-piva" value="${escapeHtml(f.piva||"")}"></div>
       </div>
-      <label>Note</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
+      <label>${tr("Note","Notes")}</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
-        <button type="submit">Salva modifiche</button>
-        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
-        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina fornitore</button>` : ""}
+        <button type="submit">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">${tr("Annulla","Annuler")}</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">${tr("Elimina fornitore","Supprimer le fournisseur")}</button>` : ""}
       </div>
     </form>
   `;
-  openModal("Modifica fornitore", body, (bodyEl)=>{
+  openModal(tr("Modifica fornitore","Modifier le fournisseur"), body, (bodyEl)=>{
     bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
     const btnDel = bodyEl.querySelector("#btn-elimina-edit");
-    if(btnDel) btnDel.onclick = ()=>confirmDelete("fornitori", id, `il fornitore "${f.ragione_sociale}"`);
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("fornitori", id, tr(`il fornitore "${f.ragione_sociale}"`,`le fournisseur "${f.ragione_sociale}"`));
     bodyEl.querySelector("#form-edit-fornitore").onsubmit = async (e)=>{
       e.preventDefault();
       const payload = {
@@ -2653,7 +2653,7 @@ function editFornitore(id){
         note: bodyEl.querySelector("#ef-note").value.trim() || null,
       };
       const { error } = await sb.from("fornitori").update(payload).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       closeModal();
       render();
     };
@@ -2673,52 +2673,52 @@ function viewFatture(){
   const totDaPagare = rows.filter(f=>f.tipo==="ricevuta" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
   return `
     <div class="kpi-grid" style="margin-bottom:18px;">
-      <div class="kpi"><div class="num">${fmtMoney(totIncassare)}</div><div class="lbl">Da incassare (clienti)</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(totScadute)}</div><div class="lbl">Scadute (clienti)</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(totDaPagare)}</div><div class="lbl">Da pagare (fornitori)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totIncassare)}</div><div class="lbl">${tr("Da incassare (clienti)","À encaisser (clients)")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totScadute)}</div><div class="lbl">${tr("Scadute (clienti)","Échues (clients)")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totDaPagare)}</div><div class="lbl">${tr("Da pagare (fornitori)","À payer (fournisseurs)")}</div></div>
     </div>
     <div class="card">
-      <h2>Nuova fattura</h2>
+      <h2>${tr("Nuova fattura","Nouvelle facture")}</h2>
       <form id="form-fattura">
         <div class="form-grid">
-          <div><label>Tipo *</label>
+          <div><label>${tr("Tipo *","Type *")}</label>
             <select required id="ft-tipo">
-              <option value="emessa">Emessa (a un cliente)</option>
-              <option value="ricevuta">Ricevuta (da un fornitore)</option>
+              <option value="emessa">${tr("Emessa (a un cliente)","Émise (à un client)")}</option>
+              <option value="ricevuta">${tr("Ricevuta (da un fornitore)","Reçue (d'un fournisseur)")}</option>
             </select>
           </div>
-          <div id="ft-cliente-wrap"><label>Cliente *</label><select id="ft-cliente">${clientiOpts}</select></div>
-          <div id="ft-fornitore-wrap" style="display:none;"><label>Fornitore *</label><select id="ft-fornitore">${fornitoriOpts}</select></div>
-          <div><label>Service Order collegato</label><select id="ft-so"><option value="">-- nessuno --</option>${soOpts}</select></div>
-          <div><label>Data emissione</label><input type="date" id="ft-emissione" value="${new Date().toISOString().slice(0,10)}"></div>
-          <div><label>Data scadenza</label><input type="date" id="ft-scadenza"></div>
-          <div><label>Imponibile (FCFA) *</label><input type="number" step="0.01" required id="ft-imponibile"></div>
-          <div><label>IVA %</label><input type="number" step="0.01" id="ft-iva" value="22"></div>
+          <div id="ft-cliente-wrap"><label>${tr("Cliente *","Client *")}</label><select id="ft-cliente">${clientiOpts}</select></div>
+          <div id="ft-fornitore-wrap" style="display:none;"><label>${tr("Fornitore *","Fournisseur *")}</label><select id="ft-fornitore">${fornitoriOpts}</select></div>
+          <div><label>${tr("Service Order collegato","Service Order lié")}</label><select id="ft-so"><option value="">${tr("-- nessuno --","-- aucun --")}</option>${soOpts}</select></div>
+          <div><label>${tr("Data emissione","Date d'émission")}</label><input type="date" id="ft-emissione" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div><label>${tr("Data scadenza","Date d'échéance")}</label><input type="date" id="ft-scadenza"></div>
+          <div><label>${tr("Imponibile (FCFA) *","Montant HT (FCFA) *")}</label><input type="number" step="0.01" required id="ft-imponibile"></div>
+          <div><label>${tr("IVA %","TVA %")}</label><input type="number" step="0.01" id="ft-iva" value="22"></div>
         </div>
-        <label>Note</label><textarea id="ft-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Salva fattura</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="ft-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Salva fattura","Enregistrer la facture")}</button></div>
       </form>
     </div>
     <div class="card">
-      <h2>Elenco fatture (${rows.length})</h2>
+      <h2>${tr("Elenco fatture","Liste des factures")} (${rows.length})</h2>
       ${exportButtonsHtml("exp-fatture")}
-      ${rows.length===0? `<div class="empty">Nessuna fattura inserita.</div>` : `
-      <table><thead><tr><th>Numero</th><th>Tipo</th><th>Cliente/Fornitore</th><th>Emissione</th><th>Scadenza</th><th>Totale</th><th>Stato</th><th></th></tr></thead>
+      ${rows.length===0? `<div class="empty">${tr("Nessuna fattura inserita.","Aucune facture saisie.")}</div>` : `
+      <table><thead><tr><th>${tr("Numero","Numéro")}</th><th>${tr("Tipo","Type")}</th><th>${tr("Cliente/Fornitore","Client/Fournisseur")}</th><th>${tr("Emissione","Émission")}</th><th>${tr("Scadenza","Échéance")}</th><th>${tr("Totale","Total")}</th><th>${tr("Stato","Statut")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(f=>{
           const stEff = statoFatturaEffettivo(f);
           return `<tr>
             <td>#${f.numero}</td>
-            <td>${f.tipo==="emessa"?"Emessa":"Ricevuta"}</td>
+            <td>${f.tipo==="emessa"?tr("Emessa","Émise"):tr("Ricevuta","Reçue")}</td>
             <td>${f.tipo==="emessa"? escapeHtml(clienteNome(f.cliente_id)) : escapeHtml(fornitoreNome(f.fornitore_id))}</td>
             <td>${fmtDateOnly(f.data_emissione)}</td>
             <td>${fmtDateOnly(f.data_scadenza)}</td>
             <td>${fmtMoney(f.importo_totale)}</td>
             <td><span class="badge ${statoFatturaClass(stEff)}">${statoFatturaLabel(stEff)}</span></td>
             <td>
-              ${f.stato!=="pagata"? `<button class="secondary btn-segna-pagata" data-id="${f.id}">Segna pagata</button>` : ""}
-              ${f.stato==="non_pagata"? `<button class="secondary btn-segna-insoluto" data-id="${f.id}">Insoluto</button>` : ""}
-              <button class="secondary btn-edit-fattura" data-id="${f.id}">Modifica</button>
+              ${f.stato!=="pagata"? `<button class="secondary btn-segna-pagata" data-id="${f.id}">${tr("Segna pagata","Marquer payée")}</button>` : ""}
+              ${f.stato==="non_pagata"? `<button class="secondary btn-segna-insoluto" data-id="${f.id}">${tr("Insoluto","Impayée")}</button>` : ""}
+              <button class="secondary btn-edit-fattura" data-id="${f.id}">${tr("Modifica","Modifier")}</button>
             </td>
           </tr>`;
         }).join("")}
@@ -2734,26 +2734,26 @@ function editFattura(id){
   const body = `
     <form id="form-edit-fattura">
       <div class="form-grid">
-        <div><label>Cliente/Fornitore</label>
+        <div><label>${tr("Cliente/Fornitore","Client/Fournisseur")}</label>
           ${f.tipo==="emessa"? `<select id="ef-cliente">${clientiOpts}</select>` : `<select id="ef-fornitore">${fornitoriOpts}</select>`}
         </div>
-        <div><label>Data emissione</label><input type="date" id="ef-emissione" value="${f.data_emissione||""}"></div>
-        <div><label>Data scadenza</label><input type="date" id="ef-scadenza" value="${f.data_scadenza||""}"></div>
-        <div><label>Imponibile (FCFA) *</label><input type="number" step="0.01" required id="ef-imponibile" value="${f.importo_imponibile}"></div>
-        <div><label>IVA %</label><input type="number" step="0.01" id="ef-iva" value="${f.iva_percentuale}"></div>
+        <div><label>${tr("Data emissione","Date d'émission")}</label><input type="date" id="ef-emissione" value="${f.data_emissione||""}"></div>
+        <div><label>${tr("Data scadenza","Date d'échéance")}</label><input type="date" id="ef-scadenza" value="${f.data_scadenza||""}"></div>
+        <div><label>${tr("Imponibile (FCFA) *","Montant HT (FCFA) *")}</label><input type="number" step="0.01" required id="ef-imponibile" value="${f.importo_imponibile}"></div>
+        <div><label>${tr("IVA %","TVA %")}</label><input type="number" step="0.01" id="ef-iva" value="${f.iva_percentuale}"></div>
       </div>
-      <label>Note</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
+      <label>${tr("Note","Notes")}</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
-        <button type="submit">Salva modifiche</button>
-        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
-        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina fattura</button>` : ""}
+        <button type="submit">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">${tr("Annulla","Annuler")}</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">${tr("Elimina fattura","Supprimer la facture")}</button>` : ""}
       </div>
     </form>
   `;
-  openModal(`Modifica fattura #${f.numero}`, body, (bodyEl)=>{
+  openModal(tr(`Modifica fattura #${f.numero}`,`Modifier la facture #${f.numero}`), body, (bodyEl)=>{
     bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
     const btnDel = bodyEl.querySelector("#btn-elimina-edit");
-    if(btnDel) btnDel.onclick = ()=>confirmDelete("fatture", id, `la fattura #${f.numero}`);
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("fatture", id, tr(`la fattura #${f.numero}`,`la facture #${f.numero}`));
     bodyEl.querySelector("#form-edit-fattura").onsubmit = async (e)=>{
       e.preventDefault();
       const payload = {
@@ -2766,7 +2766,7 @@ function editFattura(id){
       if(f.tipo==="emessa") payload.cliente_id = bodyEl.querySelector("#ef-cliente").value;
       else payload.fornitore_id = bodyEl.querySelector("#ef-fornitore").value;
       const { error } = await sb.from("fatture").update(payload).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       closeModal();
       render();
     };
@@ -2800,27 +2800,27 @@ function wireFatture(){
       created_by: state.session.user.id,
     };
     const { error } = await sb.from("fatture").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-segna-pagata").forEach(b=>{
     b.onclick = async ()=>{
       const { error } = await sb.from("fatture").update({ stato:"pagata" }).eq("id", b.dataset.id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       render();
     };
   });
   document.querySelectorAll(".btn-segna-insoluto").forEach(b=>{
     b.onclick = async ()=>{
       const { error } = await sb.from("fatture").update({ stato:"insoluto" }).eq("id", b.dataset.id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       render();
     };
   });
   document.querySelectorAll(".btn-edit-fattura").forEach(b=>{ b.onclick = ()=>editFattura(b.dataset.id); });
-  wireExportButtons("exp-fatture", "fatture", "Fatture",
-    ["Numero","Tipo","Cliente/Fornitore","Emissione","Scadenza","Totale","Stato"],
-    ()=>state.data.fatture.map(f=>[f.numero, f.tipo==="emessa"?"Emessa":"Ricevuta", f.tipo==="emessa"?clienteNome(f.cliente_id):fornitoreNome(f.fornitore_id), fmtDateOnly(f.data_emissione), fmtDateOnly(f.data_scadenza), Number(f.importo_totale).toFixed(2), statoFatturaLabel(statoFatturaEffettivo(f))])
+  wireExportButtons("exp-fatture", "fatture", tr("Fatture","Factures"),
+    [tr("Numero","Numéro"),tr("Tipo","Type"),tr("Cliente/Fornitore","Client/Fournisseur"),tr("Emissione","Émission"),tr("Scadenza","Échéance"),tr("Totale","Total"),tr("Stato","Statut")],
+    ()=>state.data.fatture.map(f=>[f.numero, f.tipo==="emessa"?tr("Emessa","Émise"):tr("Ricevuta","Reçue"), f.tipo==="emessa"?clienteNome(f.cliente_id):fornitoreNome(f.fornitore_id), fmtDateOnly(f.data_emissione), fmtDateOnly(f.data_scadenza), Number(f.importo_totale).toFixed(2), statoFatturaLabel(statoFatturaEffettivo(f))])
   );
 }
 
@@ -2834,37 +2834,37 @@ function viewCassa(){
   const saldo = entrate - uscite;
   return `
     <div class="kpi-grid" style="margin-bottom:18px;">
-      <div class="kpi"><div class="num">${fmtMoney(entrate)}</div><div class="lbl">Totale entrate</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(uscite)}</div><div class="lbl">Totale uscite</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(saldo)}</div><div class="lbl">Saldo</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(entrate)}</div><div class="lbl">${tr("Totale entrate","Total entrées")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(uscite)}</div><div class="lbl">${tr("Totale uscite","Total sorties")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(saldo)}</div><div class="lbl">${tr("Saldo","Solde")}</div></div>
     </div>
     <div class="card">
-      <h2>Nuovo movimento</h2>
+      <h2>${tr("Nuovo movimento","Nouveau mouvement")}</h2>
       <form id="form-movimento">
         <div class="form-grid">
-          <div><label>Tipo *</label><select required id="mv-tipo"><option value="entrata">Entrata</option><option value="uscita">Uscita</option></select></div>
-          <div><label>Metodo</label><select id="mv-metodo"><option value="banca">Banca</option><option value="cassa">Cassa</option></select></div>
-          <div><label>Importo (FCFA) *</label><input type="number" step="0.01" required id="mv-importo"></div>
-          <div><label>Data</label><input type="date" id="mv-data" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div><label>${tr("Tipo *","Type *")}</label><select required id="mv-tipo"><option value="entrata">${tr("Entrata","Entrée")}</option><option value="uscita">${tr("Uscita","Sortie")}</option></select></div>
+          <div><label>${tr("Metodo","Méthode")}</label><select id="mv-metodo"><option value="banca">${tr("Banca","Banque")}</option><option value="cassa">${tr("Cassa","Caisse")}</option></select></div>
+          <div><label>${tr("Importo (FCFA) *","Montant (FCFA) *")}</label><input type="number" step="0.01" required id="mv-importo"></div>
+          <div><label>${tr("Data","Date")}</label><input type="date" id="mv-data" value="${new Date().toISOString().slice(0,10)}"></div>
         </div>
-        <label>Descrizione</label><textarea id="mv-descrizione"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Registra movimento</button></div>
+        <label>${tr("Descrizione","Description")}</label><textarea id="mv-descrizione"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Registra movimento","Enregistrer le mouvement")}</button></div>
       </form>
     </div>
     <div class="card">
-      <h2>Movimenti (${rows.length})</h2>
+      <h2>${tr("Movimenti","Mouvements")} (${rows.length})</h2>
       ${exportButtonsHtml("exp-cassa")}
-      ${rows.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
-      <table><thead><tr><th>Data</th><th>Tipo</th><th>Metodo</th><th>Importo</th><th>Descrizione</th><th></th></tr></thead>
+      ${rows.length===0? `<div class="empty">${tr("Nessun movimento registrato.","Aucun mouvement enregistré.")}</div>` : `
+      <table><thead><tr><th>${tr("Data","Date")}</th><th>${tr("Tipo","Type")}</th><th>${tr("Metodo","Méthode")}</th><th>${tr("Importo","Montant")}</th><th>${tr("Descrizione","Description")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(m=>`
           <tr>
             <td>${fmtDateOnly(m.data)}</td>
-            <td><span class="badge ${m.tipo==='entrata'?'disponibile':'danneggiato'}">${m.tipo==='entrata'?'Entrata':'Uscita'}</span></td>
-            <td>${m.metodo==='banca'?'Banca':'Cassa'}</td>
+            <td><span class="badge ${m.tipo==='entrata'?'disponibile':'danneggiato'}">${m.tipo==='entrata'?tr('Entrata','Entrée'):tr('Uscita','Sortie')}</span></td>
+            <td>${m.metodo==='banca'?tr('Banca','Banque'):tr('Cassa','Caisse')}</td>
             <td>${fmtMoney(m.importo)}</td>
             <td>${escapeHtml(m.descrizione||"-")}</td>
-            <td><button class="secondary btn-edit-movimento" data-id="${m.id}">Modifica</button></td>
+            <td><button class="secondary btn-edit-movimento" data-id="${m.id}">${tr("Modifica","Modifier")}</button></td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -2884,13 +2884,13 @@ function wireCassa(){
       created_by: state.session.user.id,
     };
     const { error } = await sb.from("movimenti_cassa").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-edit-movimento").forEach(b=>{ b.onclick = ()=>editMovimento(b.dataset.id); });
-  wireExportButtons("exp-cassa", "movimenti_cassa", "Movimenti di cassa",
-    ["Data","Tipo","Metodo","Importo","Descrizione"],
-    ()=>state.data.movimenti.map(m=>[fmtDateOnly(m.data), m.tipo==='entrata'?'Entrata':'Uscita', m.metodo==='banca'?'Banca':'Cassa', Number(m.importo).toFixed(2), m.descrizione||""])
+  wireExportButtons("exp-cassa", "movimenti_cassa", tr("Movimenti di cassa","Mouvements de caisse"),
+    [tr("Data","Date"),tr("Tipo","Type"),tr("Metodo","Méthode"),tr("Importo","Montant"),tr("Descrizione","Description")],
+    ()=>state.data.movimenti.map(m=>[fmtDateOnly(m.data), m.tipo==='entrata'?tr('Entrata','Entrée'):tr('Uscita','Sortie'), m.metodo==='banca'?tr('Banca','Banque'):tr('Cassa','Caisse'), Number(m.importo).toFixed(2), m.descrizione||""])
   );
 }
 function editMovimento(id){
@@ -2899,23 +2899,23 @@ function editMovimento(id){
   const body = `
     <form id="form-edit-movimento">
       <div class="form-grid">
-        <div><label>Tipo *</label><select required id="em-tipo"><option value="entrata" ${m.tipo==="entrata"?"selected":""}>Entrata</option><option value="uscita" ${m.tipo==="uscita"?"selected":""}>Uscita</option></select></div>
-        <div><label>Metodo</label><select id="em-metodo"><option value="banca" ${m.metodo==="banca"?"selected":""}>Banca</option><option value="cassa" ${m.metodo==="cassa"?"selected":""}>Cassa</option></select></div>
-        <div><label>Importo (FCFA) *</label><input type="number" step="0.01" required id="em-importo" value="${m.importo}"></div>
-        <div><label>Data</label><input type="date" id="em-data" value="${m.data||""}"></div>
+        <div><label>${tr("Tipo *","Type *")}</label><select required id="em-tipo"><option value="entrata" ${m.tipo==="entrata"?"selected":""}>${tr("Entrata","Entrée")}</option><option value="uscita" ${m.tipo==="uscita"?"selected":""}>${tr("Uscita","Sortie")}</option></select></div>
+        <div><label>${tr("Metodo","Méthode")}</label><select id="em-metodo"><option value="banca" ${m.metodo==="banca"?"selected":""}>${tr("Banca","Banque")}</option><option value="cassa" ${m.metodo==="cassa"?"selected":""}>${tr("Cassa","Caisse")}</option></select></div>
+        <div><label>${tr("Importo (FCFA) *","Montant (FCFA) *")}</label><input type="number" step="0.01" required id="em-importo" value="${m.importo}"></div>
+        <div><label>${tr("Data","Date")}</label><input type="date" id="em-data" value="${m.data||""}"></div>
       </div>
-      <label>Descrizione</label><textarea id="em-descrizione">${escapeHtml(m.descrizione||"")}</textarea>
+      <label>${tr("Descrizione","Description")}</label><textarea id="em-descrizione">${escapeHtml(m.descrizione||"")}</textarea>
       <div class="actions" style="margin-top:14px;">
-        <button type="submit">Salva modifiche</button>
-        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
-        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina movimento</button>` : ""}
+        <button type="submit">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">${tr("Annulla","Annuler")}</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">${tr("Elimina movimento","Supprimer le mouvement")}</button>` : ""}
       </div>
     </form>
   `;
-  openModal("Modifica movimento", body, (bodyEl)=>{
+  openModal(tr("Modifica movimento","Modifier le mouvement"), body, (bodyEl)=>{
     bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
     const btnDel = bodyEl.querySelector("#btn-elimina-edit");
-    if(btnDel) btnDel.onclick = ()=>confirmDelete("movimenti_cassa", id, "questo movimento");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("movimenti_cassa", id, tr("questo movimento","ce mouvement"));
     bodyEl.querySelector("#form-edit-movimento").onsubmit = async (e)=>{
       e.preventDefault();
       const payload = {
@@ -2926,7 +2926,7 @@ function editMovimento(id){
         descrizione: bodyEl.querySelector("#em-descrizione").value.trim() || null,
       };
       const { error } = await sb.from("movimenti_cassa").update(payload).eq("id", id);
-      if(error){ alert("Errore: "+error.message); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
       closeModal();
       render();
     };
@@ -2940,20 +2940,20 @@ function viewMessaggi(){
   const rows = state.data.messaggiInterni;
   return `
     <div class="card">
-      <h2>Nuovo messaggio</h2>
+      <h2>${tr("Nuovo messaggio","Nouveau message")}</h2>
       <form id="form-messaggio">
-        <textarea id="msg-testo" placeholder="Scrivi un messaggio per gli altri colleghi..." required></textarea>
-        <div style="margin-top:10px;"><button type="submit">Invia</button></div>
+        <textarea id="msg-testo" placeholder="${tr("Scrivi un messaggio per gli altri colleghi...","Écrivez un message pour vos collègues...")}" required></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Invia","Envoyer")}</button></div>
       </form>
     </div>
     <div class="card">
-      <h2>Bacheca (${rows.length})</h2>
-      ${rows.length===0? `<div class="empty">Nessun messaggio ancora.</div>` : rows.map(m=>{
+      <h2>${tr("Bacheca","Tableau d'affichage")} (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">${tr("Nessun messaggio ancora.","Aucun message pour l'instant.")}</div>` : rows.map(m=>{
         const autore = state.data.profiles.find(p=>p.id===m.creato_da);
         return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
           <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
-            <span>${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(m.created_at)}</span>
-            ${myRole()==="admin"? `<button class="secondary btn-elimina-messaggio" data-id="${m.id}" style="padding:2px 8px;font-size:11px;">Elimina</button>` : ""}
+            <span>${escapeHtml(autore? autore.full_name : tr("Utente","Utilisateur"))} — ${fmtDate(m.created_at)}</span>
+            ${myRole()==="admin"? `<button class="secondary btn-elimina-messaggio" data-id="${m.id}" style="padding:2px 8px;font-size:11px;">${tr("Elimina","Supprimer")}</button>` : ""}
           </div>
           <div>${escapeHtml(m.testo)}</div>
         </div>`;
@@ -2968,11 +2968,11 @@ function wireMessaggi(){
     const testo = document.getElementById("msg-testo").value.trim();
     if(!testo) return;
     const { error } = await sb.from("messaggi_interni").insert({ testo, creato_da: state.session.user.id });
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-elimina-messaggio").forEach(b=>{
-    b.onclick = ()=>confirmDelete("messaggi_interni", b.dataset.id, "questo messaggio");
+    b.onclick = ()=>confirmDelete("messaggi_interni", b.dataset.id, tr("questo messaggio","ce message"));
   });
 }
 
@@ -2982,9 +2982,9 @@ function wireMessaggi(){
 function viewInventarioRapido(){
   return `
     <div class="card">
-      <h2>📱 Inventario rapido</h2>
-      <p><small class="hint">Pensato per fare il giro del magazzino con il telefono: scansiona il QR/DTR di un pezzo per vederne subito i dati, confermarne la presenza o aggiornarne stato e posizione, senza cercarlo nell'elenco. Dopo ogni pezzo puoi scansionare subito il successivo.</small></p>
-      <button id="btn-inv-scansiona">📷 Scansiona pezzo</button>
+      <h2>📱 ${tr("Inventario rapido","Inventaire rapide")}</h2>
+      <p><small class="hint">${tr("Pensato per fare il giro del magazzino con il telefono: scansiona il QR/DTR di un pezzo per vederne subito i dati, confermarne la presenza o aggiornarne stato e posizione, senza cercarlo nell'elenco. Dopo ogni pezzo puoi scansionare subito il successivo.","Conçu pour faire le tour de l'entrepôt avec le téléphone : scannez le QR/DTR d'une pièce pour voir immédiatement ses données, confirmer sa présence ou mettre à jour son statut et son emplacement, sans la chercher dans la liste. Après chaque pièce, vous pouvez scanner immédiatement la suivante.")}</small></p>
+      <button id="btn-inv-scansiona">📷 ${tr("Scansiona pezzo","Scanner une pièce")}</button>
     </div>
     <div id="inv-risultato"></div>
   `;
@@ -3002,24 +3002,24 @@ function renderInventarioRisultato(p, testoScansionato){
   const el = document.getElementById("inv-risultato");
   if(!el) return;
   if(!p){
-    el.innerHTML = `<div class="card"><div class="msg error">Nessun pezzo trovato con il codice "${escapeHtml(testoScansionato)}".</div></div>`;
+    el.innerHTML = `<div class="card"><div class="msg error">${tr("Nessun pezzo trovato con il codice","Aucune pièce trouvée avec le code")} "${escapeHtml(testoScansionato)}".</div></div>`;
     return;
   }
   const stati = ["disponibile","in_uso","in_revisione","da_riparare","danneggiato","fuori_servizio"];
   el.innerHTML = `
     <div class="card">
       <h2>${escapeHtml(p.dtr)} ${badge(p.stato)}</h2>
-      <p><strong>Articolo:</strong> ${escapeHtml(articoloLabel(p.articolo_id))}<br>
-         ${p.cliente_id? `<strong>Presso:</strong> ${escapeHtml(clienteNome(p.cliente_id))}${p.cantiere_id? " / "+escapeHtml(cantiereNome(p.cantiere_id)) : ""}<br>` : ""}
-         <strong>Ultima verifica inventario:</strong> ${p.ultima_verifica_inventario? fmtDate(p.ultima_verifica_inventario) : "mai"}</p>
+      <p><strong>${tr("Articolo:","Article :")}</strong> ${escapeHtml(articoloLabel(p.articolo_id))}<br>
+         ${p.cliente_id? `<strong>${tr("Presso:","Chez :")}</strong> ${escapeHtml(clienteNome(p.cliente_id))}${p.cantiere_id? " / "+escapeHtml(cantiereNome(p.cantiere_id)) : ""}<br>` : ""}
+         <strong>${tr("Ultima verifica inventario:","Dernière vérification d'inventaire :")}</strong> ${p.ultima_verifica_inventario? fmtDate(p.ultima_verifica_inventario) : tr("mai","jamais")}</p>
       <div class="form-grid">
-        <div><label>Aggiorna stato</label><select id="inv-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
-        <div><label>Posizione</label><input id="inv-posizione" value="${escapeHtml(p.posizione||"")}"></div>
+        <div><label>${tr("Aggiorna stato","Mettre à jour le statut")}</label><select id="inv-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
+        <div><label>${tr("Posizione","Emplacement")}</label><input id="inv-posizione" value="${escapeHtml(p.posizione||"")}"></div>
       </div>
       <div class="actions" style="margin-top:10px;">
-        <button id="btn-inv-conferma">✔️ Conferma presente</button>
-        <button class="secondary" id="btn-inv-salva">Salva modifiche</button>
-        <button class="secondary" id="btn-inv-prossimo">📷 Scansiona il prossimo</button>
+        <button id="btn-inv-conferma">✔️ ${tr("Conferma presente","Confirmer la présence")}</button>
+        <button class="secondary" id="btn-inv-salva">${tr("Salva modifiche","Enregistrer les modifications")}</button>
+        <button class="secondary" id="btn-inv-prossimo">📷 ${tr("Scansiona il prossimo","Scanner la suivante")}</button>
       </div>
       <div id="inv-msg"></div>
     </div>
@@ -3027,9 +3027,9 @@ function renderInventarioRisultato(p, testoScansionato){
   document.getElementById("btn-inv-conferma").onclick = async ()=>{
     const msg = document.getElementById("inv-msg");
     const { error } = await sb.from("pezzi").update({ ultima_verifica_inventario: new Date().toISOString() }).eq("id", p.id);
-    if(error){ msg.innerHTML = `<div class="msg error">Errore: ${escapeHtml(error.message)}</div>`; return; }
+    if(error){ msg.innerHTML = `<div class="msg error">${tr("Errore:","Erreur :")} ${escapeHtml(error.message)}</div>`; return; }
     await loadAll();
-    msg.innerHTML = `<div class="msg ok">Presenza confermata.</div>`;
+    msg.innerHTML = `<div class="msg ok">${tr("Presenza confermata.","Présence confirmée.")}</div>`;
   };
   document.getElementById("btn-inv-salva").onclick = async ()=>{
     const msg = document.getElementById("inv-msg");
@@ -3039,9 +3039,9 @@ function renderInventarioRisultato(p, testoScansionato){
       ultima_verifica_inventario: new Date().toISOString(),
     };
     const { error } = await sb.from("pezzi").update(payload).eq("id", p.id);
-    if(error){ msg.innerHTML = `<div class="msg error">Errore: ${escapeHtml(error.message)}</div>`; return; }
+    if(error){ msg.innerHTML = `<div class="msg error">${tr("Errore:","Erreur :")} ${escapeHtml(error.message)}</div>`; return; }
     await loadAll();
-    msg.innerHTML = `<div class="msg ok">Modifiche salvate.</div>`;
+    msg.innerHTML = `<div class="msg ok">${tr("Modifiche salvate.","Modifications enregistrées.")}</div>`;
   };
   document.getElementById("btn-inv-prossimo").onclick = ()=>{
     apriScannerQR((testo)=>{
@@ -3062,23 +3062,23 @@ function viewDDT(){
   return `
     ${!puoCreare? "" : `
     <div class="card">
-      <h2>Nuovo DDT</h2>
-      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <h2>${tr("Nuovo DDT","Nouveau BL")}</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">${tr("Devi prima creare almeno un cliente.","Vous devez d'abord créer au moins un client.")}</div>` : `
       <form id="form-ddt">
         <div class="form-grid">
-          <div><label>Cliente *</label><select required id="ddt-cliente">${clientiOpts}</select></div>
-          <div><label>Cantiere</label><select id="ddt-cantiere"><option value="">-- nessuno --</option></select></div>
-          <div><label>Causale del trasporto</label><input id="ddt-causale" placeholder="es. Vendita, Conto lavoro, Reso..."></div>
+          <div><label>${tr("Cliente *","Client *")}</label><select required id="ddt-cliente">${clientiOpts}</select></div>
+          <div><label>${tr("Cantiere","Chantier")}</label><select id="ddt-cantiere"><option value="">${tr("-- nessuno --","-- aucun --")}</option></select></div>
+          <div><label>${tr("Causale del trasporto","Motif du transport")}</label><input id="ddt-causale" placeholder="${tr("es. Vendita, Conto lavoro, Reso...","ex. Vente, Sous-traitance, Retour...")}"></div>
         </div>
-        <label>Note</label><textarea id="ddt-note"></textarea>
-        <div style="margin-top:10px;"><button type="submit">Crea DDT</button></div>
+        <label>${tr("Note","Notes")}</label><textarea id="ddt-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">${tr("Crea DDT","Créer un BL")}</button></div>
       </form>`}
     </div>`}
     <div class="card">
-      <h2>Elenco DDT (${rows.length})</h2>
+      <h2>${tr("Elenco DDT","Liste des BL")} (${rows.length})</h2>
       ${exportButtonsHtml("exp-ddt")}
-      ${rows.length===0? `<div class="empty">Nessun DDT creato.</div>` : `
-      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Causale</th><th>Stato</th><th>Apertura</th><th></th></tr></thead>
+      ${rows.length===0? `<div class="empty">${tr("Nessun DDT creato.","Aucun BL créé.")}</div>` : `
+      <table><thead><tr><th>${tr("Numero","Numéro")}</th><th>${tr("Cliente","Client")}</th><th>${tr("Cantiere","Chantier")}</th><th>${tr("Causale","Motif")}</th><th>${tr("Stato","Statut")}</th><th>${tr("Apertura","Ouverture")}</th><th></th></tr></thead>
       <tbody>
         ${rows.map(dd=>`
           <tr>
@@ -3088,7 +3088,7 @@ function viewDDT(){
             <td>${escapeHtml(dd.causale||"-")}</td>
             <td>${badge(dd.stato)}</td>
             <td>${fmtDate(dd.data_apertura)}</td>
-            <td><button class="secondary btn-apri-ddt" data-id="${dd.id}">Apri</button></td>
+            <td><button class="secondary btn-apri-ddt" data-id="${dd.id}">${tr("Apri","Ouvrir")}</button></td>
           </tr>
         `).join("")}
       </tbody></table>`}
@@ -3103,7 +3103,7 @@ function wireDDT(){
     if(!selCliente) return;
     const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
       .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
-    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+    selCantiere.innerHTML = `<option value="">${tr("-- nessuno --","-- aucun --")}</option>` + opts;
   }
   if(selCliente){ aggiornaCantieri(); selCliente.onchange = aggiornaCantieri; }
   const f = document.getElementById("form-ddt");
@@ -3118,12 +3118,12 @@ function wireDDT(){
       creato_da: state.session.user.id,
     };
     const { error } = await sb.from("ddt").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   document.querySelectorAll(".btn-apri-ddt").forEach(b=>{ b.onclick = ()=>{ state.ddtAperto = b.dataset.id; render(); }; });
   wireExportButtons("exp-ddt", "ddt", "DDT",
-    ["Numero","Cliente","Cantiere","Causale","Stato","Apertura","Chiusura","Note"],
+    [tr("Numero","Numéro"),tr("Cliente","Client"),tr("Cantiere","Chantier"),tr("Causale","Motif"),tr("Stato","Statut"),tr("Apertura","Ouverture"),tr("Chiusura","Clôture"),tr("Note","Notes")],
     ()=>state.data.ddt.map(dd=>[ddtNumero(dd.numero), clienteNome(dd.cliente_id), cantiereNome(dd.cantiere_id), dd.causale||"", statoLabel(dd.stato), fmtDate(dd.data_apertura), dd.data_chiusura? fmtDate(dd.data_chiusura):"", dd.note||""])
   );
 }
@@ -3134,37 +3134,37 @@ function viewDDTDettaglio(id){
   const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
   const puoModificare = ["magazzino","commerciale","admin"].includes(myRole()) && dd.stato==="aperto";
   return `
-    <button class="secondary" id="btn-torna-ddt">&larr; Torna all'elenco</button>
+    <button class="secondary" id="btn-torna-ddt">&larr; ${tr("Torna all'elenco","Retour à la liste")}</button>
     <div class="card" style="margin-top:14px;">
       <h2>DDT #${ddtNumero(dd.numero)} ${badge(dd.stato)}</h2>
-      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(dd.cliente_id))} &nbsp;
-         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(dd.cantiere_id))} &nbsp;
-         <strong>Aperto il:</strong> ${fmtDate(dd.data_apertura)}
-         ${dd.data_chiusura? ` &nbsp; <strong>Chiuso il:</strong> ${fmtDate(dd.data_chiusura)}` : ""}</p>
-      ${dd.causale? `<p><strong>Causale:</strong> ${escapeHtml(dd.causale)}</p>` : ""}
+      <p><strong>${tr("Cliente:","Client :")}</strong> ${escapeHtml(clienteNome(dd.cliente_id))} &nbsp;
+         <strong>${tr("Cantiere:","Chantier :")}</strong> ${escapeHtml(cantiereNome(dd.cantiere_id))} &nbsp;
+         <strong>${tr("Aperto il:","Ouvert le :")}</strong> ${fmtDate(dd.data_apertura)}
+         ${dd.data_chiusura? ` &nbsp; <strong>${tr("Chiuso il:","Clôturé le :")}</strong> ${fmtDate(dd.data_chiusura)}` : ""}</p>
+      ${dd.causale? `<p><strong>${tr("Causale:","Motif :")}</strong> ${escapeHtml(dd.causale)}</p>` : ""}
       ${dd.note? `<p><em>${escapeHtml(dd.note)}</em></p>` : ""}
       <div class="actions">
-        <button class="secondary" id="btn-stampa-ddt">🖨️ Stampa DDT</button>
-        ${dd.stato==="aperto"? `<button class="secondary" id="btn-chiudi-ddt">Chiudi DDT</button>` : ""}
-        ${dd.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-ddt">Riapri DDT</button>` : ""}
-        ${dd.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">Solo l'amministratore può riaprire un DDT chiuso.</small>` : ""}
-        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-ddt">Elimina DDT</button>` : ""}
+        <button class="secondary" id="btn-stampa-ddt">🖨️ ${tr("Stampa DDT","Imprimer le BL")}</button>
+        ${dd.stato==="aperto"? `<button class="secondary" id="btn-chiudi-ddt">${tr("Chiudi DDT","Clôturer le BL")}</button>` : ""}
+        ${dd.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-ddt">${tr("Riapri DDT","Rouvrir le BL")}</button>` : ""}
+        ${dd.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">${tr("Solo l'amministratore può riaprire un DDT chiuso.","Seul l'administrateur peut rouvrir un BL clôturé.")}</small>` : ""}
+        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-ddt">${tr("Elimina DDT","Supprimer le BL")}</button>` : ""}
       </div>
     </div>
     <div class="card">
-      <h2>Righe di carico</h2>
+      <h2>${tr("Righe di carico","Lignes de chargement")}</h2>
       ${puoModificare? `
       <form id="form-riga-ddt">
         <div class="form-grid">
-          <div><label>Articolo</label><select id="rd-articolo">${articoliOpts}</select></div>
-          <div><label>Descrizione (facoltativa, es. per merce non a catalogo)</label><input id="rd-descrizione"></div>
-          <div><label>Quantità *</label><input required type="number" step="0.01" min="0.01" id="rd-quantita" value="1"></div>
+          <div><label>${tr("Articolo","Article")}</label><select id="rd-articolo">${articoliOpts}</select></div>
+          <div><label>${tr("Descrizione (facoltativa, es. per merce non a catalogo)","Description (facultative, ex. pour marchandise hors catalogue)")}</label><input id="rd-descrizione"></div>
+          <div><label>${tr("Quantità *","Quantité *")}</label><input required type="number" step="0.01" min="0.01" id="rd-quantita" value="1"></div>
         </div>
-        <div style="margin-top:10px;"><button type="submit">Aggiungi riga</button></div>
+        <div style="margin-top:10px;"><button type="submit">${tr("Aggiungi riga","Ajouter une ligne")}</button></div>
       </form>` : ""}
-      <table style="margin-top:14px;"><thead><tr><th>Articolo</th><th>Descrizione</th><th style="text-align:right;">Quantità</th></tr></thead>
+      <table style="margin-top:14px;"><thead><tr><th>${tr("Articolo","Article")}</th><th>${tr("Descrizione","Description")}</th><th style="text-align:right;">${tr("Quantità","Quantité")}</th></tr></thead>
       <tbody>
-        ${righe.length===0? `<tr><td colspan="3" class="empty">Nessuna riga di carico.</td></tr>` : righe.map(r=>`
+        ${righe.length===0? `<tr><td colspan="3" class="empty">${tr("Nessuna riga di carico.","Aucune ligne de chargement.")}</td></tr>` : righe.map(r=>`
           <tr><td>${r.articolo_id? escapeHtml(articoloLabel(r.articolo_id)) : "-"}</td><td>${escapeHtml(r.descrizione||"-")}</td><td style="text-align:right;">${r.quantita}</td></tr>
         `).join("")}
       </tbody></table>
@@ -3178,18 +3178,18 @@ function wireDDTDettaglio(id){
   const btnChiudi = document.getElementById("btn-chiudi-ddt");
   if(btnChiudi) btnChiudi.onclick = async ()=>{
     const { error } = await sb.from("ddt").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   const btnRiapri = document.getElementById("btn-riapri-ddt");
   if(btnRiapri) btnRiapri.onclick = async ()=>{
-    if(!confirm("Riaprire questo DDT?")) return;
+    if(!confirm(tr("Riaprire questo DDT?","Rouvrir ce BL ?"))) return;
     const { error } = await sb.from("ddt").update({ stato:"aperto", data_chiusura: null }).eq("id", id);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
   const btnElimina = document.getElementById("btn-elimina-ddt");
-  if(btnElimina) btnElimina.onclick = ()=>confirmDelete("ddt", id, `il DDT #${ddtNumero(dd.numero)}`, ()=>{ state.ddtAperto=null; });
+  if(btnElimina) btnElimina.onclick = ()=>confirmDelete("ddt", id, tr(`il DDT #${ddtNumero(dd.numero)}`,`le BL #${ddtNumero(dd.numero)}`), ()=>{ state.ddtAperto=null; });
   const fRiga = document.getElementById("form-riga-ddt");
   if(fRiga) fRiga.onsubmit = async (e)=>{
     e.preventDefault();
@@ -3200,7 +3200,7 @@ function wireDDTDettaglio(id){
       quantita: Number(document.getElementById("rd-quantita").value),
     };
     const { error } = await sb.from("ddt_righe").insert(payload);
-    if(error){ alert("Errore: "+error.message); return; }
+    if(error){ alert(tr("Errore: ","Erreur : ")+error.message); return; }
     render();
   };
 }
@@ -3208,7 +3208,7 @@ function wireDDTDettaglio(id){
 // ETICHETTE QR (per stampare un codice da attaccare fisicamente sul pezzo)
 // ============================================================
 async function stampaEtichetteQR(pezziDaStampare){
-  if(typeof QRCode==="undefined"){ alert("La libreria per generare i QR non si è ancora caricata: riprova tra qualche secondo."); return; }
+  if(typeof QRCode==="undefined"){ alert(tr("La libreria per generare i QR non si è ancora caricata: riprova tra qualche secondo.","La bibliothèque pour générer les QR n'est pas encore chargée : réessayez dans quelques secondes.")); return; }
   let etichette;
   try{
     etichette = await Promise.all(pezziDaStampare.map(async p=>({
@@ -3216,10 +3216,10 @@ async function stampaEtichetteQR(pezziDaStampare){
       img: await QRCode.toDataURL(p.dtr, { width: 220, margin: 1 }),
     })));
   } catch(err){
-    alert("Errore nella generazione dei QR: "+err.message);
+    alert(tr("Errore nella generazione dei QR: ","Erreur lors de la génération des QR : ")+err.message);
     return;
   }
-  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Etichette QR</title>
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>${tr("Etichette QR","Étiquettes QR")}</title>
 <style>
   body{font-family:Arial,Helvetica,sans-serif;margin:20px;}
   .griglia{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
@@ -3229,13 +3229,13 @@ async function stampaEtichetteQR(pezziDaStampare){
   .etichetta .art{font-size:11px;color:#555;}
   @media print{ button{display:none;} }
 </style></head><body>
-  <button onclick="window.print()" style="margin-bottom:16px;padding:10px 18px;font-size:14px;">Stampa queste etichette</button>
+  <button onclick="window.print()" style="margin-bottom:16px;padding:10px 18px;font-size:14px;">${tr("Stampa queste etichette","Imprimer ces étiquettes")}</button>
   <div class="griglia">
     ${etichette.map(e=>`<div class="etichetta"><img src="${e.img}"><div class="dtr">${escapeHtml(e.dtr)}</div><div class="art">${escapeHtml(e.articolo)}</div></div>`).join("")}
   </div>
 </body></html>`;
   const w = window.open("", "_blank");
-  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  if(!w){ alert(tr("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova.","Le navigateur a bloqué l'ouverture de la fenêtre. Autorisez les pop-ups pour ce site et réessayez.")); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 
@@ -3259,24 +3259,24 @@ function stampaDDT(id){
   @media print{ button{display:none;} }
 </style></head>
 <body>
-  <h1>Documento di Trasporto #${ddtNumero(dd.numero)}</h1>
-  <p class="sub">Data apertura: ${fmtDate(dd.data_apertura)}${dd.data_chiusura? " — Chiuso il: "+fmtDate(dd.data_chiusura) : ""}</p>
+  <h1>${tr("Documento di Trasporto","Bon de livraison")} #${ddtNumero(dd.numero)}</h1>
+  <p class="sub">${tr("Data apertura:","Date d'ouverture :")} ${fmtDate(dd.data_apertura)}${dd.data_chiusura? " — "+tr("Chiuso il:","Clôturé le :")+" "+fmtDate(dd.data_chiusura) : ""}</p>
   <div class="box">
-    <strong>Cliente:</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
-    ${cliente.indirizzo? `Indirizzo: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
-    ${cliente.piva? `P.IVA: ${escapeHtml(cliente.piva)}<br>` : ""}
-    ${dd.cantiere_id? `Cantiere: ${escapeHtml(cantiereNome(dd.cantiere_id))}<br>` : ""}
-    ${dd.causale? `Causale: ${escapeHtml(dd.causale)}<br>` : ""}
+    <strong>${tr("Cliente:","Client :")}</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
+    ${cliente.indirizzo? `${tr("Indirizzo","Adresse")}: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
+    ${cliente.piva? `${tr("P.IVA","N° TVA")}: ${escapeHtml(cliente.piva)}<br>` : ""}
+    ${dd.cantiere_id? `${tr("Cantiere","Chantier")}: ${escapeHtml(cantiereNome(dd.cantiere_id))}<br>` : ""}
+    ${dd.causale? `${tr("Causale","Motif")}: ${escapeHtml(dd.causale)}<br>` : ""}
   </div>
   ${dd.note? `<p><em>${escapeHtml(dd.note)}</em></p>` : ""}
   <table>
-    <thead><tr><th>Articolo</th><th>Descrizione</th><th style="text-align:right;">Quantità</th></tr></thead>
+    <thead><tr><th>${tr("Articolo","Article")}</th><th>${tr("Descrizione","Description")}</th><th style="text-align:right;">${tr("Quantità","Quantité")}</th></tr></thead>
     <tbody>${righeHtml}</tbody>
   </table>
-  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">Stampa questa pagina</button>
+  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">${tr("Stampa questa pagina","Imprimer cette page")}</button>
 </body></html>`;
   const w = window.open("", "_blank");
-  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  if(!w){ alert(tr("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova.","Le navigateur a bloqué l'ouverture de la fenêtre. Autorisez les pop-ups pour ce site et réessayez.")); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 
@@ -3297,15 +3297,15 @@ function viewRegistroModifiche(){
   const tabelle = ["clienti","cantieri","pezzi","articoli","service_orders","preventivi","fatture","ddt"];
   return `
     <div class="card">
-      <h2>Registro storico delle modifiche</h2>
-      <p><small class="hint">Ogni riga mostra un campo cambiato: chi lo ha modificato, quando, il valore prima e dopo. Visibile solo all'amministratore.</small></p>
+      <h2>${tr("Registro storico delle modifiche","Historique des modifications")}</h2>
+      <p><small class="hint">${tr("Ogni riga mostra un campo cambiato: chi lo ha modificato, quando, il valore prima e dopo. Visibile solo all'amministratore.","Chaque ligne montre un champ modifié : qui l'a modifié, quand, la valeur avant et après. Visible uniquement par l'administrateur.")}</small></p>
       <div class="pill-select" id="filtro-log">
-        <button data-f="tutte" class="${filtro==="tutte"?"active":""}">Tutte</button>
+        <button data-f="tutte" class="${filtro==="tutte"?"active":""}">${tr("Tutte","Toutes")}</button>
         ${tabelle.map(t=>`<button data-f="${t}" class="${filtro===t?"active":""}">${nomeTabella(t)}</button>`).join("")}
       </div>
       ${exportButtonsHtml("exp-log")}
-      ${rows.length===0? `<div class="empty">Nessuna modifica registrata.</div>` : `
-      <table><thead><tr><th>Quando</th><th>Tabella</th><th>Campo</th><th>Prima</th><th>Dopo</th><th>Utente</th></tr></thead>
+      ${rows.length===0? `<div class="empty">${tr("Nessuna modifica registrata.","Aucune modification enregistrée.")}</div>` : `
+      <table><thead><tr><th>${tr("Quando","Quand")}</th><th>${tr("Tabella","Table")}</th><th>${tr("Campo","Champ")}</th><th>${tr("Prima","Avant")}</th><th>${tr("Dopo","Après")}</th><th>${tr("Utente","Utilisateur")}</th></tr></thead>
       <tbody>
         ${rows.map(l=>`
           <tr>
@@ -3326,8 +3326,8 @@ function wireRegistroModifiche(){
     b.onclick = ()=>{ state.filtroLogModifiche = b.dataset.f; render(); };
   });
   const rows = state.filtroLogModifiche && state.filtroLogModifiche!=="tutte"? state.data.logModifiche.filter(l=>l.tabella===state.filtroLogModifiche) : state.data.logModifiche;
-  wireExportButtons("exp-log", "registro_modifiche", "Registro modifiche",
-    ["Quando","Tabella","Campo","Prima","Dopo","Utente"],
+  wireExportButtons("exp-log", "registro_modifiche", tr("Registro modifiche","Historique des modifications"),
+    [tr("Quando","Quand"),tr("Tabella","Table"),tr("Campo","Champ"),tr("Prima","Avant"),tr("Dopo","Après"),tr("Utente","Utilisateur")],
     ()=>rows.map(l=>[fmtDate(l.created_at), nomeTabella(l.tabella), l.campo||"", l.valore_prima==null?"":String(l.valore_prima), l.valore_dopo==null?"":String(l.valore_dopo), nomeUtente(l.utente_id)])
   );
 }
@@ -3339,9 +3339,9 @@ function viewUtenti(){
   const rows = state.data.profiles;
   return `
     <div class="card">
-      <h2>Utenti e ruoli</h2>
-      <p><small class="hint">Assegna a ciascun utente il ruolo corretto. Magazzino: gestisce quantità e pezzi. Commerciale: gestisce clienti/cantieri. Contabile: vede clienti/cantieri (non il magazzino). Socio/Azionista: sola lettura dell'andamento aziendale. Admin: accesso completo.</small></p>
-      <table><thead><tr><th>Utente</th><th>Ruolo attuale</th><th>Cambia ruolo</th></tr></thead>
+      <h2>${tr("Utenti e ruoli","Utilisateurs et rôles")}</h2>
+      <p><small class="hint">${tr("Assegna a ciascun utente il ruolo corretto. Magazzino: gestisce quantità e pezzi. Commerciale: gestisce clienti/cantieri. Contabile: vede clienti/cantieri (non il magazzino). Socio/Azionista: sola lettura dell'andamento aziendale. Admin: accesso completo.","Attribuez à chaque utilisateur le rôle correct. Entrepôt : gère les quantités et les pièces. Commercial : gère les clients/chantiers. Comptable : voit les clients/chantiers (pas l'entrepôt). Associé/Actionnaire : lecture seule de la performance de l'entreprise. Admin : accès complet.")}</small></p>
+      <table><thead><tr><th>${tr("Utente","Utilisateur")}</th><th>${tr("Ruolo attuale","Rôle actuel")}</th><th>${tr("Cambia ruolo","Changer de rôle")}</th></tr></thead>
       <tbody>
         ${rows.map(p=>`
           <tr>
@@ -3349,11 +3349,11 @@ function viewUtenti(){
             <td>${badge(p.ruolo==="admin"?"chiuso":p.ruolo==="magazzino"?"disponibile":p.ruolo==="commerciale"?"in_uso":p.ruolo==="shareholder"?"aperto":"in_revisione")} ${escapeHtml(ruoloLabel(p.ruolo))}</td>
             <td>
               <select data-id="${p.id}" class="sel-ruolo">
-                <option value="admin" ${p.ruolo==="admin"?"selected":""}>Amministratore</option>
-                <option value="magazzino" ${p.ruolo==="magazzino"?"selected":""}>Magazzino</option>
-                <option value="commerciale" ${p.ruolo==="commerciale"?"selected":""}>Commerciale</option>
-                <option value="contabile" ${p.ruolo==="contabile"?"selected":""}>Contabile</option>
-                <option value="shareholder" ${p.ruolo==="shareholder"?"selected":""}>Socio/Azionista</option>
+                <option value="admin" ${p.ruolo==="admin"?"selected":""}>${tr("Amministratore","Administrateur")}</option>
+                <option value="magazzino" ${p.ruolo==="magazzino"?"selected":""}>${tr("Magazzino","Entrepôt")}</option>
+                <option value="commerciale" ${p.ruolo==="commerciale"?"selected":""}>${tr("Commerciale","Commercial")}</option>
+                <option value="contabile" ${p.ruolo==="contabile"?"selected":""}>${tr("Contabile","Comptable")}</option>
+                <option value="shareholder" ${p.ruolo==="shareholder"?"selected":""}>${tr("Socio/Azionista","Associé/Actionnaire")}</option>
               </select>
             </td>
           </tr>
@@ -3366,7 +3366,7 @@ function wireUtenti(){
   document.querySelectorAll(".sel-ruolo").forEach(sel=>{
     sel.onchange = async ()=>{
       const { error } = await sb.from("profiles").update({ ruolo: sel.value }).eq("id", sel.dataset.id);
-      if(error){ alert("Errore: "+error.message); render(); return; }
+      if(error){ alert(tr("Errore: ","Erreur : ")+error.message); render(); return; }
       render();
     };
   });
