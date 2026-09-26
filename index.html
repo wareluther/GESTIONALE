@@ -1,36 +1,3028 @@
-// Service worker minimo: rende il gestionale installabile come app sul telefono
-// e mantiene visibile una pagina base anche con connessione instabile.
-// IMPORTANTE: non tocca mai le chiamate verso Supabase (altro dominio): quelle
-// passano sempre e solo dalla rete, così i dati restano sempre aggiornati.
-const CACHE_NAME = "gestionale-v1";
-const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png"];
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestionale Aziendale</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e5cb3">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Gestionale">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+  :root{
+    --primary:#1e5cb3; --primary-dark:#154585; --bg:#f4f6f9; --card:#ffffff;
+    --border:#e1e5ea; --text:#1c2530; --muted:#66707d; --danger:#c0392b; --ok:#1f8b4c;
+    --warn:#b8860b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  #app{min-height:100vh;display:flex;flex-direction:column;}
+  header{background:var(--primary);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  header h1{font-size:18px;margin:0;font-weight:600;}
+  header .user-box{font-size:13px;display:flex;align-items:center;gap:12px;}
+  button{cursor:pointer;border:none;border-radius:6px;padding:8px 14px;font-size:14px;background:var(--primary);color:#fff;}
+  button:hover{background:var(--primary-dark);}
+  button.secondary{background:#eef1f5;color:var(--text);}
+  button.secondary:hover{background:#dfe4ea;}
+  button.danger{background:var(--danger);}
+  nav{background:#fff;border-bottom:1px solid var(--border);display:flex;gap:4px;padding:0 16px;overflow-x:auto;}
+  nav button{background:transparent;color:var(--muted);border-radius:0;padding:12px 16px;font-weight:500;white-space:nowrap;}
+  nav button.active{color:var(--primary);border-bottom:2px solid var(--primary);}
+  nav button:hover{background:#f0f3f7;color:var(--primary);}
+  main{flex:1;padding:20px;max-width:1200px;width:100%;margin:0 auto;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:18px;}
+  .card h2{margin-top:0;font-size:16px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+  tr:hover td{background:#f8fafc;}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:#fff;color:var(--text);}
+  textarea{min-height:60px;font-family:inherit;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;}
+  .badge.disponibile{background:#e3f6ea;color:var(--ok);}
+  .badge.in_uso{background:#e5edfa;color:var(--primary);}
+  .badge.in_revisione,.badge.da_riparare{background:#fdf3d8;color:var(--warn);}
+  .badge.danneggiato,.badge.fuori_servizio{background:#fbe3e1;color:var(--danger);}
+  .badge.aperto{background:#e5edfa;color:var(--primary);}
+  .badge.in_corso{background:#fdf3d8;color:var(--warn);}
+  .badge.chiuso{background:#e3f6ea;color:var(--ok);}
+  .badge.annullato{background:#fbe3e1;color:var(--danger);}
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:32px;width:100%;max-width:380px;}
+  .login-box h1{font-size:20px;text-align:center;margin-bottom:4px;}
+  .login-box p.sub{text-align:center;color:var(--muted);font-size:13px;margin-top:0;margin-bottom:20px;}
+  .login-box label{margin-top:12px;}
+  .login-box button{width:100%;margin-top:18px;padding:10px;}
+  .switch-link{text-align:center;margin-top:14px;font-size:13px;color:var(--muted);}
+  .switch-link a{color:var(--primary);cursor:pointer;text-decoration:none;}
+  .msg{padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:12px;}
+  .msg.error{background:#fbe3e1;color:var(--danger);}
+  .msg.ok{background:#e3f6ea;color:var(--ok);}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .empty{color:var(--muted);font-size:13px;padding:20px;text-align:center;}
+  .pill-select{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .pill-select button{background:#eef1f5;color:var(--text);padding:6px 12px;font-size:12px;}
+  .pill-select button.active{background:var(--primary);color:#fff;}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;}
+  .kpi{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;}
+  .kpi .num{font-size:26px;font-weight:700;color:var(--primary);}
+  .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+  select[multiple]{height:auto;}
+  .close-x{background:transparent;color:var(--muted);padding:4px 8px;}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .modal{background:#fff;border-radius:10px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow:auto;}
+  .modal h3{margin-top:0;}
+  small.hint{color:var(--muted);}
+  .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:18px;}
+  .chart-wrap{position:relative;height:260px;}
+  .chart-wrap canvas{max-width:100%;}
+</style>
+</head>
+<body>
+<div id="app"></div>
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
-});
+<script>
+// ============================================================
+// CONFIGURAZIONE SUPABASE
+// ============================================================
+const SUPABASE_URL = "https://pvlzvubxwbwtsqgmxdvt.supabase.co";
+const SUPABASE_KEY = "sb_publishable_BE-eqQHoW5Vaxy3HURnt6w_wU2sN6dW";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
-});
+// ============================================================
+// STATO GLOBALE
+// ============================================================
+let state = {
+  session: null,
+  view: "dashboard",
+  data: { clienti: [], cantieri: [], articoli: [], pezzi: [], serviceOrders: [], righe: [], profiles: [], listino: [], preventivi: [], preventivoRighe: [], fornitori: [], fatture: [], movimenti: [], documenti: [], attivitaCrm: [], commentiSO: [], messaggiInterni: [], notificheEventi: [], notificheLette: [], ddt: [], ddtRighe: [], logModifiche: [] },
+  authMode: "login", // login | signup
+  soAperto: null, // id service order aperto nel dettaglio
+  preventivoAperto: null, // id preventivo aperto nel dettaglio
+  ddtAperto: null, // id ddt aperto nel dettaglio
+  andamentoPeriodo: "rolling12", // rolling12 | annocorrente | annoscorso | confronto
+  filtroLogModifiche: "tutte",
+};
 
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-  let url;
-  try { url = new URL(req.url); } catch (e) { return; }
-  if (url.origin !== self.location.origin) return; // mai Supabase o altri domini
+const app = document.getElementById("app");
 
-  if (req.mode === "navigate") {
-    event.respondWith(fetch(req).catch(() => caches.match("./index.html")));
+function statoLabel(s){
+  const map = {
+    disponibile:"Disponibile", in_uso:"In uso", in_revisione:"In revisione",
+    da_riparare:"Da riparare", danneggiato:"Danneggiato", fuori_servizio:"Fuori servizio",
+    attivo:"Attivo", sospeso:"Sospeso", concluso:"Concluso",
+    aperto:"Aperto", in_corso:"In corso", chiuso:"Chiuso", annullato:"Annullato"
+  };
+  return map[s] || s;
+}
+function badge(s){ return `<span class="badge ${s}">${statoLabel(s)}</span>`; }
+function fmtDate(d){ if(!d) return "-"; const dt=new Date(d); return dt.toLocaleDateString("it-IT")+" "+dt.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"}); }
+function escapeHtml(str){ if(str==null) return ""; return String(str).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function soNumero(n){ return n==null? "------" : String(n).padStart(6,"0"); }
+function ddtNumero(n){ return n==null? "------" : String(n).padStart(6,"0"); }
+
+// ============================================================
+// ESPORTAZIONI (CSV / Excel / PDF)
+// ============================================================
+function scaricaBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function exportCSV(filename, headers, rows){
+  const esc = v=>{ const s = v==null? "" : String(v); return /[",;\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const lines = [headers.map(esc).join(";"), ...rows.map(r=>r.map(esc).join(";"))];
+  scaricaBlob(new Blob(["﻿"+lines.join("\n")], {type:"text/csv;charset=utf-8;"}), filename+".csv");
+}
+function exportExcel(filename, headers, rows, sheetName){
+  if(typeof XLSX==="undefined"){ alert("La libreria per l'export Excel non si è ancora caricata: riprova tra qualche secondo."); return; }
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, (sheetName||"Foglio1").slice(0,31));
+  XLSX.writeFile(wb, filename+".xlsx");
+}
+function exportPDF(filename, title, headers, rows){
+  if(typeof window.jspdf==="undefined"){ alert("La libreria per l'export PDF non si è ancora caricata: riprova tra qualche secondo."); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: headers.length>5? "landscape" : "portrait" });
+  doc.setFontSize(14); doc.text(title, 14, 16);
+  doc.autoTable({ head:[headers], body: rows, startY: 22, styles:{ fontSize:8 } });
+  doc.save(filename+".pdf");
+}
+function exportButtonsHtml(idPrefix){
+  return `<div class="actions" style="margin-bottom:10px;">
+    <button type="button" class="secondary" id="${idPrefix}-csv">⬇️ CSV</button>
+    <button type="button" class="secondary" id="${idPrefix}-xlsx">⬇️ Excel</button>
+    <button type="button" class="secondary" id="${idPrefix}-pdf">⬇️ PDF</button>
+  </div>`;
+}
+function wireExportButtons(idPrefix, filename, title, headers, getRows){
+  const bC = document.getElementById(idPrefix+"-csv");
+  const bX = document.getElementById(idPrefix+"-xlsx");
+  const bP = document.getElementById(idPrefix+"-pdf");
+  if(bC) bC.onclick = ()=>exportCSV(filename, headers, getRows());
+  if(bX) bX.onclick = ()=>exportExcel(filename, headers, getRows(), title);
+  if(bP) bP.onclick = ()=>exportPDF(filename, title, headers, getRows());
+}
+
+// ============================================================
+// SCANSIONE QR / CODICI A BARRE DA FOTOCAMERA
+// ============================================================
+let _scannerStream = null;
+function fermaScanner(){
+  if(_scannerStream){ _scannerStream.getTracks().forEach(t=>t.stop()); _scannerStream = null; }
+}
+function apriScannerQR(onRisultato){
+  const body = `
+    <video id="scanner-video" style="width:100%;border-radius:8px;background:#000;" playsinline muted autoplay></video>
+    <canvas id="scanner-canvas" style="display:none;"></canvas>
+    <p><small class="hint">Inquadra il codice QR o a barre stampato sul pezzo. Serve il permesso di usare la fotocamera.</small></p>
+    <div id="scanner-msg"></div>
+  `;
+  openModal("Scansiona codice", body, async (bodyEl)=>{
+    const video = bodyEl.querySelector("#scanner-video");
+    const canvas = bodyEl.querySelector("#scanner-canvas");
+    const ctx = canvas.getContext("2d");
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">Questo browser/dispositivo non supporta l'accesso alla fotocamera.</div>`;
+      return;
+    }
+    try{
+      _scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    } catch(err){
+      bodyEl.querySelector("#scanner-msg").innerHTML = `<div class="msg error">Impossibile accedere alla fotocamera: ${escapeHtml(err.message)}</div>`;
+      return;
+    }
+    video.srcObject = _scannerStream;
+    let attivo = true;
+    function ferma(){ attivo = false; fermaScanner(); }
+    function tick(){
+      if(!attivo) return;
+      if(video.readyState===video.HAVE_ENOUGH_DATA && typeof jsQR!=="undefined" && canvas.parentNode){
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        if(canvas.width>0 && canvas.height>0){
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height);
+          if(code && code.data){
+            ferma();
+            closeModal();
+            onRisultato(code.data.trim());
+            return;
+          }
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+// ============================================================
+// RICERCA GLOBALE
+// ============================================================
+function eseguiRicercaGlobale(query){
+  const q = (query||"").trim().toLowerCase();
+  if(q.length<2) return [];
+  const risultati = [];
+  state.data.clienti.forEach(c=>{
+    if([c.ragione_sociale,c.referente,c.email,c.telefono,c.piva].some(v=>v && String(v).toLowerCase().includes(q))){
+      risultati.push({ tipo:"Cliente", label: c.ragione_sociale, vai: ()=>{ state.view="clienti"; } });
+    }
+  });
+  state.data.cantieri.forEach(k=>{
+    if([k.nome,k.indirizzo,k.referente].some(v=>v && String(v).toLowerCase().includes(q))){
+      risultati.push({ tipo:"Cantiere", label: k.nome+" — "+clienteNome(k.cliente_id), vai: ()=>{ state.view="cantieri"; } });
+    }
+  });
+  state.data.pezzi.forEach(p=>{
+    if(p.dtr && p.dtr.toLowerCase().includes(q)){
+      risultati.push({ tipo:"Pezzo (DTR)", label: p.dtr+" — "+articoloLabel(p.articolo_id), vai: ()=>{ state.view="pezzi"; } });
+    }
+  });
+  state.data.articoli.forEach(a=>{
+    if([a.codice,a.descrizione].some(v=>v && String(v).toLowerCase().includes(q))){
+      risultati.push({ tipo:"Articolo", label: a.codice+" — "+a.descrizione, vai: ()=>{ state.view="magazzino"; } });
+    }
+  });
+  state.data.serviceOrders.forEach(s=>{
+    if(soNumero(s.numero).includes(q.replace(/\D/g,"")) && q.replace(/\D/g,"").length>0){
+      risultati.push({ tipo:"Service Order", label:"#"+soNumero(s.numero)+" — "+clienteNome(s.cliente_id), vai: ()=>{ state.view="serviceorder"; state.soAperto=s.id; } });
+    }
+  });
+  if(state.data.ddt) state.data.ddt.forEach(dd=>{
+    if(ddtNumero(dd.numero).includes(q.replace(/\D/g,"")) && q.replace(/\D/g,"").length>0){
+      risultati.push({ tipo:"DDT", label:"#"+ddtNumero(dd.numero)+" — "+clienteNome(dd.cliente_id), vai: ()=>{ state.view="ddt"; state.ddtAperto=dd.id; } });
+    }
+  });
+  return risultati.slice(0,30);
+}
+function apriRicercaGlobale(){
+  const body = `
+    <input type="text" id="ricerca-globale-input" placeholder="Cerca cliente, cantiere, DTR, articolo, Service Order, DDT..." autofocus>
+    <div id="ricerca-globale-risultati" style="margin-top:14px;"></div>
+  `;
+  openModal("Ricerca", body, (bodyEl)=>{
+    const input = bodyEl.querySelector("#ricerca-globale-input");
+    const risEl = bodyEl.querySelector("#ricerca-globale-risultati");
+    function aggiorna(){
+      const ris = eseguiRicercaGlobale(input.value);
+      if(input.value.trim().length<2){ risEl.innerHTML = `<div class="empty">Scrivi almeno 2 caratteri.</div>`; return; }
+      risEl.innerHTML = ris.length===0? `<div class="empty">Nessun risultato.</div>` : `
+        <table><tbody>
+        ${ris.map((r,i)=>`<tr><td><span class="badge in_uso">${escapeHtml(r.tipo)}</span></td><td>${escapeHtml(r.label)}</td><td><button class="secondary btn-vai-risultato" data-i="${i}">Apri</button></td></tr>`).join("")}
+        </tbody></table>`;
+      risEl.querySelectorAll(".btn-vai-risultato").forEach(b=>{
+        b.onclick = ()=>{ ris[Number(b.dataset.i)].vai(); closeModal(); render(); };
+      });
+    }
+    input.oninput = aggiorna;
+    aggiorna();
+  });
+}
+
+// ============================================================
+// MODALE GENERICO (usato per Modifica e per i Documenti)
+// ============================================================
+function openModal(title, bodyHtml, onMount){
+  closeModal();
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.id = "modal-bg";
+  bg.innerHTML = `<div class="modal"><button type="button" class="close-x" id="modal-close" style="float:right;">✕</button><h3>${escapeHtml(title)}</h3><div id="modal-body">${bodyHtml}</div></div>`;
+  document.body.appendChild(bg);
+  document.getElementById("modal-close").onclick = closeModal;
+  bg.onclick = (e)=>{ if(e.target===bg) closeModal(); };
+  if(onMount) onMount(document.getElementById("modal-body"));
+}
+function closeModal(){
+  fermaScanner();
+  const bg = document.getElementById("modal-bg");
+  if(bg) bg.remove();
+}
+async function confirmDelete(table, id, labelCosa, afterOk){
+  if(!confirm(`Eliminare definitivamente ${labelCosa||"questo elemento"}?\nL'operazione non è reversibile.`)) return;
+  const { error } = await sb.from(table).delete().eq("id", id);
+  if(error){ alert("Errore durante l'eliminazione: "+error.message+"\n\n(Solo l'amministratore può eliminare. Se l'errore persiste contatta l'admin.)"); return; }
+  closeModal();
+  if(afterOk) afterOk();
+  render();
+}
+
+// ============================================================
+// NOTIFICHE (eventi generati automaticamente sul cambio di stato)
+// ============================================================
+function apriNotifiche(){
+  const eventi = state.data.notificheEventi;
+  const lette = new Set(state.data.notificheLette.map(l=>l.evento_id));
+  const body = `
+    <table><thead><tr><th>Evento</th><th>Quando</th><th></th></tr></thead>
+    <tbody>
+      ${eventi.length===0? `<tr><td colspan="3" class="empty">Nessuna notifica.</td></tr>` : eventi.map(ev=>`
+        <tr style="${lette.has(ev.id)?'':'font-weight:600;'}">
+          <td>${escapeHtml(ev.messaggio)}</td>
+          <td>${fmtDate(ev.created_at)}</td>
+          <td>${!lette.has(ev.id)? `<button class="secondary btn-segna-letta" data-id="${ev.id}">Segna come letta</button>` : "✓"}</td>
+        </tr>
+      `).join("")}
+    </tbody></table>
+    <div class="actions" style="margin-top:14px;">
+      ${eventi.some(ev=>!lette.has(ev.id))? `<button id="btn-segna-tutte-lette">Segna tutte come lette</button>` : ""}
+      ${myRole()==="admin" && eventi.length>0? `<button class="secondary" id="btn-pulisci-notifiche">🧹 Elimina notifiche più vecchie di 90 giorni</button>` : ""}
+    </div>
+  `;
+  openModal("Notifiche", body, (bodyEl)=>{
+    bodyEl.querySelectorAll(".btn-segna-letta").forEach(b=>{
+      b.onclick = async ()=>{
+        await sb.from("notifiche_lette").insert({ utente_id: state.session.user.id, evento_id: b.dataset.id });
+        await loadAll();
+        apriNotifiche();
+      };
+    });
+    const btnTutte = bodyEl.querySelector("#btn-segna-tutte-lette");
+    if(btnTutte) btnTutte.onclick = async ()=>{
+      const daSegnare = eventi.filter(ev=>!lette.has(ev.id)).map(ev=>({ utente_id: state.session.user.id, evento_id: ev.id }));
+      if(daSegnare.length>0) await sb.from("notifiche_lette").insert(daSegnare);
+      closeModal();
+      render();
+    };
+    const btnPulisci = bodyEl.querySelector("#btn-pulisci-notifiche");
+    if(btnPulisci) btnPulisci.onclick = async ()=>{
+      if(!confirm("Eliminare definitivamente le notifiche più vecchie di 90 giorni? L'operazione non è reversibile.")) return;
+      const cutoff = new Date(Date.now() - 90*24*60*60*1000).toISOString();
+      const { error } = await sb.from("notifiche_eventi").delete().lt("created_at", cutoff);
+      if(error){ alert("Errore: "+error.message); return; }
+      await loadAll();
+      apriNotifiche();
+    };
+  });
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+async function initAuth(){
+  const { data:{ session } } = await sb.auth.getSession();
+  state.session = session;
+  sb.auth.onAuthStateChange((_event, session)=>{
+    state.session = session;
+    render();
+  });
+  render();
+}
+
+async function handleLogin(email, password){
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  return error;
+}
+async function handleSignup(email, password, fullName){
+  const { error } = await sb.auth.signUp({ email, password, options:{ data:{ full_name: fullName } } });
+  return error;
+}
+async function handleLogout(){
+  await sb.auth.signOut();
+  state.view = "dashboard";
+  render();
+}
+
+// ============================================================
+// CARICAMENTO DATI
+// ============================================================
+async function loadAll(){
+  const [clienti, cantieri, articoli, pezzi, serviceOrders, righe, profiles, listino, preventivi, preventivoRighe, fornitori, fatture, movimenti, documenti, attivitaCrm, commentiSO, messaggiInterni, notificheEventi, notificheLette, ddt, ddtRighe, logModifiche] = await Promise.all([
+    sb.from("clienti").select("*").order("created_at",{ascending:false}),
+    sb.from("cantieri").select("*").order("created_at",{ascending:false}),
+    sb.from("articoli").select("*").order("created_at",{ascending:false}),
+    sb.from("pezzi").select("*").order("created_at",{ascending:false}),
+    sb.from("service_orders").select("*").order("data_apertura",{ascending:false}),
+    sb.from("service_order_righe").select("*").order("data",{ascending:false}),
+    sb.from("profiles").select("*").order("created_at",{ascending:false}),
+    sb.from("listino_prezzi").select("*"),
+    sb.from("preventivi").select("*").order("data_creazione",{ascending:false}),
+    sb.from("preventivo_righe").select("*"),
+    sb.from("fornitori").select("*").order("created_at",{ascending:false}),
+    sb.from("fatture").select("*").order("data_emissione",{ascending:false}),
+    sb.from("movimenti_cassa").select("*").order("data",{ascending:false}),
+    sb.from("documenti").select("*").order("created_at",{ascending:false}),
+    sb.from("attivita_crm").select("*").order("data",{ascending:false}),
+    sb.from("commenti_service_order").select("*").order("created_at",{ascending:true}),
+    sb.from("messaggi_interni").select("*").order("created_at",{ascending:false}),
+    sb.from("notifiche_eventi").select("*").order("created_at",{ascending:false}).limit(100),
+    sb.from("notifiche_lette").select("*"),
+    sb.from("ddt").select("*").order("created_at",{ascending:false}),
+    sb.from("ddt_righe").select("*"),
+    sb.from("log_modifiche").select("*").order("created_at",{ascending:false}).limit(300),
+  ]);
+  state.data.clienti = clienti.data || [];
+  state.data.cantieri = cantieri.data || [];
+  state.data.articoli = articoli.data || [];
+  state.data.pezzi = pezzi.data || [];
+  state.data.serviceOrders = serviceOrders.data || [];
+  state.data.righe = righe.data || [];
+  state.data.profiles = profiles.data || [];
+  state.data.listino = listino.data || [];
+  state.data.preventivi = preventivi.data || [];
+  state.data.preventivoRighe = preventivoRighe.data || [];
+  state.data.fornitori = fornitori.data || [];
+  state.data.fatture = fatture.data || [];
+  state.data.movimenti = movimenti.data || [];
+  state.data.documenti = documenti.data || [];
+  state.data.attivitaCrm = attivitaCrm.data || [];
+  state.data.commentiSO = commentiSO.data || [];
+  state.data.messaggiInterni = messaggiInterni.data || [];
+  state.data.notificheEventi = notificheEventi.data || [];
+  state.data.notificheLette = notificheLette.data || [];
+  state.data.ddt = ddt.data || [];
+  state.data.ddtRighe = ddtRighe.data || [];
+  state.data.logModifiche = logModifiche.data || [];
+}
+
+function clienteNome(id){ const c = state.data.clienti.find(x=>x.id===id); return c ? c.ragione_sociale : "-"; }
+function cantiereNome(id){ const c = state.data.cantieri.find(x=>x.id===id); return c ? c.nome : "-"; }
+function articoloLabel(id){ const a = state.data.articoli.find(x=>x.id===id); return a ? `${a.codice} - ${a.descrizione}` : "-"; }
+function pezzoLabel(id){ const p = state.data.pezzi.find(x=>x.id===id); return p ? `${p.dtr} (${articoloLabel(p.articolo_id)})` : "-"; }
+function myProfile(){ return state.session ? state.data.profiles.find(p=>p.id===state.session.user.id) : null; }
+function myRole(){ const p = myProfile(); return p ? p.ruolo : null; }
+function ruoloLabel(r){ const map={admin:"Amministratore",magazzino:"Magazzino",commerciale:"Commerciale",contabile:"Contabile",shareholder:"Socio/Azionista"}; return map[r]||r; }
+function prezzoArticolo(articoloId){ return state.data.listino.find(l=>l.articolo_id===articoloId) || null; }
+function fmtMoney(n){ if(n==null || isNaN(n)) return "-"; return Number(n).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})+" €"; }
+function tipoPrezzoLabel(t){ const map={vendita:"Vendita",noleggio_giornaliero:"Noleggio giorno",noleggio_settimanale:"Noleggio settimana",noleggio_mensile:"Noleggio mese"}; return map[t]||t; }
+function totaleRiga(r){ return r.quantita * r.prezzo_unitario * (1 - (r.sconto_percentuale||0)/100); }
+function totalePreventivo(preventivoId){
+  const righe = state.data.preventivoRighe.filter(r=>r.preventivo_id===preventivoId);
+  const sub = righe.reduce((s,r)=>s+totaleRiga(r),0);
+  const prev = state.data.preventivi.find(p=>p.id===preventivoId);
+  const scontoGlobale = prev ? (prev.sconto_percentuale||0) : 0;
+  return sub * (1 - scontoGlobale/100);
+}
+function statoPreventivoLabelClass(s){ const map={bozza:"in_revisione",inviato:"in_uso",accettato:"chiuso",rifiutato:"danneggiato"}; return map[s]||s; }
+function statoPreventivoLabel(s){ const map={bozza:"Bozza",inviato:"Inviato",accettato:"Accettato",rifiutato:"Rifiutato"}; return map[s]||s; }
+function fornitoreNome(id){ const f = state.data.fornitori.find(x=>x.id===id); return f ? f.ragione_sociale : "-"; }
+function isScaduta(f){ return f.stato==="non_pagata" && f.data_scadenza && new Date(f.data_scadenza) < new Date(new Date().toDateString()); }
+function statoFatturaEffettivo(f){ return isScaduta(f) ? "scaduta" : f.stato; }
+function statoFatturaLabel(s){ const map={non_pagata:"Non pagata",pagata:"Pagata",insoluto:"Insoluto",scaduta:"Scaduta"}; return map[s]||s; }
+function statoFatturaClass(s){ const map={non_pagata:"in_uso",pagata:"chiuso",insoluto:"danneggiato",scaduta:"da_riparare"}; return map[s]||s; }
+function fmtDateOnly(d){ if(!d) return "-"; return new Date(d).toLocaleDateString("it-IT"); }
+
+// ============================================================
+// RENDER PRINCIPALE
+// ============================================================
+async function render(){
+  if(!state.session){
+    renderLogin();
     return;
   }
-  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
-});
+  await loadAll();
+  const ruolo = myRole();
+  const opRoles = ["magazzino","commerciale","contabile","admin"];
+  const isOperativo = opRoles.includes(ruolo); // uno shareholder non è un utente operativo
+  const vedeMagazzino = isOperativo && ruolo!=="contabile"; // contabile non vede magazzino/pezzi/service order
+  const vedePrezzi = isOperativo && ruolo!=="magazzino"; // il magazzino non vede prezzi/listino/preventivi
+  const vedeContabilita = ["contabile","admin"].includes(ruolo);
+  const vedeAndamento = ["shareholder","admin"].includes(ruolo);
+  const vedeInventarioRapido = ["magazzino","admin"].includes(ruolo);
+  const navItems = [["dashboard","Dashboard",isOperativo],
+    ["clienti","Clienti",isOperativo],
+    ["cantieri","Cantieri",isOperativo],
+    ["magazzino","Magazzino",vedeMagazzino],
+    ["pezzi","Pezzi (DTR)",vedeMagazzino],
+    ["inventariorapido","📱 Inventario rapido",vedeInventarioRapido],
+    ["ddt","DDT",vedeMagazzino],
+    ["listino","Listino prezzi",vedePrezzi],
+    ["preventivi","Preventivi",vedePrezzi],
+    ["serviceorder","Service Order",vedeMagazzino],
+    ["fornitori","Fornitori",vedeContabilita],
+    ["fatture","Fatture",vedeContabilita],
+    ["cassa","Cassa",vedeContabilita],
+    ["messaggi","Messaggi",isOperativo],
+    ["andamento","Andamento azienda",vedeAndamento],
+    ["registromodifiche","Registro modifiche",ruolo==="admin"],
+    ["utenti","Utenti",ruolo==="admin"]];
+  if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
+
+  const nonLette = isOperativo? state.data.notificheEventi.filter(ev=>!state.data.notificheLette.some(l=>l.evento_id===ev.id)).length : 0;
+
+  app.innerHTML = `
+    <header>
+      <h1>Gestionale Aziendale</h1>
+      <div class="user-box">
+        ${isOperativo? `<button class="secondary" id="btn-ricerca-globale">🔎 Cerca</button>` : ""}
+        ${isOperativo? `<button class="secondary" id="btn-notifiche">🔔 Notifiche${nonLette>0? ` <span class="badge danneggiato">${nonLette}</span>` : ""}</button>` : ""}
+        <span>${escapeHtml(state.session.user.email)} ${ruolo? `<span class="badge in_uso">${escapeHtml(ruoloLabel(ruolo))}</span>` : ""}</span>
+        <button class="secondary" id="btn-logout">Esci</button>
+      </div>
+    </header>
+    <nav id="main-nav">${navItems.filter(n=>n[2]).map(n=>navBtn(n[0],n[1])).join("")}</nav>
+    <main id="main-content"><div class="empty">Caricamento...</div></main>
+  `;
+  document.getElementById("btn-logout").onclick = handleLogout;
+  const btnNotifiche = document.getElementById("btn-notifiche");
+  if(btnNotifiche) btnNotifiche.onclick = apriNotifiche;
+  const btnRicerca = document.getElementById("btn-ricerca-globale");
+  if(btnRicerca) btnRicerca.onclick = apriRicercaGlobale;
+  document.querySelectorAll("#main-nav button").forEach(b=>{
+    b.onclick = ()=>{ state.view = b.dataset.view; state.soAperto=null; state.preventivoAperto=null; render(); };
+  });
+
+  const main = document.getElementById("main-content");
+  if(state.view==="dashboard") main.innerHTML = viewDashboard();
+  if(state.view==="clienti") { main.innerHTML = viewClienti(); wireClienti(); }
+  if(state.view==="cantieri") { main.innerHTML = viewCantieri(); wireCantieri(); }
+  if(state.view==="magazzino") { main.innerHTML = viewMagazzino(); wireMagazzino(); }
+  if(state.view==="pezzi") { main.innerHTML = viewPezzi(); wirePezzi(); }
+  if(state.view==="listino") { main.innerHTML = viewListino(); wireListino(); }
+  if(state.view==="preventivi") { main.innerHTML = viewPreventivi(); wirePreventivi(); }
+  if(state.view==="serviceorder") { main.innerHTML = viewServiceOrder(); wireServiceOrder(); }
+  if(state.view==="fornitori") { main.innerHTML = viewFornitori(); wireFornitori(); }
+  if(state.view==="fatture") { main.innerHTML = viewFatture(); wireFatture(); }
+  if(state.view==="cassa") { main.innerHTML = viewCassa(); wireCassa(); }
+  if(state.view==="messaggi") { main.innerHTML = viewMessaggi(); wireMessaggi(); }
+  if(state.view==="ddt") { main.innerHTML = viewDDT(); wireDDT(); }
+  if(state.view==="inventariorapido") { main.innerHTML = viewInventarioRapido(); wireInventarioRapido(); }
+  if(state.view==="registromodifiche") { main.innerHTML = viewRegistroModifiche(); wireRegistroModifiche(); }
+  if(state.view==="utenti") { main.innerHTML = viewUtenti(); wireUtenti(); }
+  if(state.view==="andamento") { main.innerHTML = await viewAndamento(); wireAndamento(); }
+}
+
+function navBtn(view, label){
+  return `<button data-view="${view}" class="${state.view===view?'active':''}">${label}</button>`;
+}
+
+// ============================================================
+// LOGIN / SIGNUP
+// ============================================================
+function renderLogin(){
+  const isSignup = state.authMode === "signup";
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-box">
+        <h1>Gestionale Aziendale</h1>
+        <p class="sub">${isSignup? "Crea il tuo account" : "Accedi al tuo account"}</p>
+        <div id="login-msg"></div>
+        <form id="login-form">
+          ${isSignup? `<label>Nome completo</label><input type="text" id="f-name" required>` : ""}
+          <label>Email</label>
+          <input type="email" id="f-email" required>
+          <label>Password</label>
+          <input type="password" id="f-password" required minlength="6">
+          <button type="submit">${isSignup? "Registrati" : "Accedi"}</button>
+        </form>
+        <div class="switch-link">
+          ${isSignup
+            ? `Hai già un account? <a id="switch-mode">Accedi</a>`
+            : `Non hai un account? <a id="switch-mode">Registrati</a>`}
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById("switch-mode").onclick = ()=>{
+    state.authMode = isSignup? "login" : "signup";
+    renderLogin();
+  };
+  document.getElementById("login-form").onsubmit = async (e)=>{
+    e.preventDefault();
+    const email = document.getElementById("f-email").value.trim();
+    const password = document.getElementById("f-password").value;
+    const msgBox = document.getElementById("login-msg");
+    msgBox.innerHTML = "";
+    let error;
+    if(isSignup){
+      const fullName = document.getElementById("f-name").value.trim();
+      error = await handleSignup(email, password, fullName);
+      if(!error){
+        msgBox.innerHTML = `<div class="msg ok">Registrazione avvenuta. Controlla la tua email se richiesta conferma, poi accedi.</div>`;
+        state.authMode = "login";
+        setTimeout(renderLogin, 1800);
+        return;
+      }
+    } else {
+      error = await handleLogin(email, password);
+    }
+    if(error){
+      msgBox.innerHTML = `<div class="msg error">${escapeHtml(error.message)}</div>`;
+    }
+  };
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function valoreMagazzino(){
+  return state.data.pezzi.reduce((tot,p)=>{
+    const l = prezzoArticolo(p.articolo_id);
+    const v = l && l.prezzo_vendita!=null ? Number(l.prezzo_vendita) : 0;
+    return tot + v;
+  },0);
+}
+function viewDashboard(){
+  const d = state.data;
+  const ruolo = myRole();
+  const oggi = new Date().toDateString();
+  const soAperti = d.serviceOrders.filter(s=>s.stato==="aperto"||s.stato==="in_corso").length;
+  const soScaduti = d.serviceOrders.filter(s=>s.data_scadenza && new Date(s.data_scadenza) < new Date(oggi) && s.stato!=="chiuso" && s.stato!=="annullato").length;
+  const ddtDaChiudere = (d.ddt||[]).filter(dd=>dd.stato==="aperto").length;
+  const fuoriMagazzino = d.pezzi.filter(p=>p.stato==="in_uso").length;
+  const daRevisionare = d.pezzi.filter(p=>p.stato==="in_revisione"||p.stato==="da_riparare").length;
+  const cantieriAttivi = d.cantieri.filter(c=>c.stato==="attivo").length;
+  const vedeContabilita = ["contabile","admin"].includes(ruolo);
+  const vedePrezzi = ruolo!=="magazzino";
+  const daIncassare = d.fatture.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const scadute = d.fatture.filter(f=>f.tipo==="emessa" && isScaduta(f)).length;
+  const preventiviAperti = d.preventivi.filter(p=>p.stato==="bozza"||p.stato==="inviato").length;
+  const clientiInattivi = d.clienti.filter(c=>!d.cantieri.some(k=>k.cliente_id===c.id && k.stato==="attivo")).length;
+  return `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="num">${d.clienti.length}</div><div class="lbl">Clienti</div></div>
+      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
+      <div class="kpi"><div class="num">${clientiInattivi}</div><div class="lbl">Clienti senza cantieri attivi</div></div>
+      <div class="kpi"><div class="num">${d.articoli.length}</div><div class="lbl">Articoli a catalogo</div></div>
+      <div class="kpi"><div class="num">${d.pezzi.length}</div><div class="lbl">Pezzi totali (DTR)</div></div>
+      <div class="kpi"><div class="num">${fuoriMagazzino}</div><div class="lbl">Pezzi fuori magazzino</div></div>
+      <div class="kpi"><div class="num">${daRevisionare}</div><div class="lbl">Da revisionare/riparare</div></div>
+      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
+      <div class="kpi"><div class="num">${soScaduti}</div><div class="lbl">Service Order scaduti</div></div>
+      <div class="kpi"><div class="num">${ddtDaChiudere}</div><div class="lbl">DDT da chiudere</div></div>
+      ${vedePrezzi? `<div class="kpi"><div class="num">${preventiviAperti}</div><div class="lbl">Preventivi aperti</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valoreMagazzino())}</div><div class="lbl">Valore magazzino (a listino)</div></div>` : ""}
+      ${vedeContabilita? `
+      <div class="kpi"><div class="num">${fmtMoney(daIncassare)}</div><div class="lbl">Da incassare</div></div>
+      <div class="kpi"><div class="num">${scadute}</div><div class="lbl">Fatture scadute</div></div>` : ""}
+    </div>
+    <div class="card" style="margin-top:18px;">
+      <h2>Ultimi Service Order</h2>
+      ${d.serviceOrders.length===0? `<div class="empty">Nessun Service Order creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Apertura</th></tr></thead>
+      <tbody>
+        ${d.serviceOrders.slice(0,8).map(s=>`
+          <tr><td>#${soNumero(s.numero)}</td><td>${escapeHtml(clienteNome(s.cliente_id))}</td><td>${escapeHtml(cantiereNome(s.cantiere_id))}</td><td>${badge(s.stato)}</td><td>${fmtDate(s.data_apertura)}</td></tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+
+// ============================================================
+// ANDAMENTO AZIENDA (dashboard per gli shareholder/soci)
+// ============================================================
+async function viewAndamento(){
+  const now = new Date();
+  const annoCorrente = now.getFullYear();
+  const annoScorso = annoCorrente - 1;
+  const periodo = state.andamentoPeriodo || "rolling12";
+
+  // Clienti/cantieri/pezzi/service order NON sono più leggibili direttamente
+  // dallo shareholder (bloccati a livello di database): i totali arrivano
+  // da funzioni dedicate che calcolano SOLO numeri aggregati (mai righe grezze),
+  // sempre lato server: il browser non riceve più fatture/movimenti di cassa.
+  let clientiAttivi = 0, cantieriAttivi = 0, soAperti = 0, valMagazzino = 0;
+  const { data: kpi, error: kpiErr } = await sb.rpc("andamento_kpi");
+  if(!kpiErr && kpi && kpi[0]){
+    clientiAttivi = kpi[0].clienti_attivi || 0;
+    cantieriAttivi = kpi[0].cantieri_attivi || 0;
+    soAperti = kpi[0].service_order_attivi || 0;
+    valMagazzino = Number(kpi[0].valore_magazzino) || 0;
+  }
+
+  // Totali economici in base al periodo selezionato (calcolati sul server) -----
+  const periodoPerTotali = periodo==="confronto" ? "annocorrente" : periodo;
+  let etichettaPeriodo = "Da sempre";
+  if(periodo==="annocorrente") etichettaPeriodo = "Anno "+annoCorrente;
+  else if(periodo==="annoscorso") etichettaPeriodo = "Anno "+annoScorso;
+  else if(periodo==="confronto") etichettaPeriodo = "Anno "+annoCorrente+" (confronto con "+annoScorso+" nei grafici)";
+
+  const { data: totRaw, error: totErr } = await sb.rpc("andamento_totali", { p_periodo: periodoPerTotali });
+  const fin = (!totErr && totRaw) ? {
+    fatturato: Number(totRaw.fatturato)||0, incassato: Number(totRaw.incassato)||0,
+    daIncassare: Number(totRaw.da_incassare)||0, costi: Number(totRaw.costi)||0,
+    utile: Number(totRaw.utile)||0, entrate: Number(totRaw.entrate)||0,
+    uscite: Number(totRaw.uscite)||0, saldo: Number(totRaw.saldo)||0,
+  } : { fatturato:0, incassato:0, daIncassare:0, costi:0, utile:0, entrate:0, uscite:0, saldo:0 };
+
+  // Serie mensili e confronto anni: anche queste arrivano già calcolate dal server -
+  let mesiLabels=[], fatturatoMensile=[], saldoMensile=[], fatturatoMensileB=null, saldoMensileB=null, legendaAnnoA=null, legendaAnnoB=null, confrontoBarre=null;
+
+  if(periodo==="confronto"){
+    legendaAnnoA = "Anno "+annoScorso; legendaAnnoB = "Anno "+annoCorrente;
+    mesiLabels = [...Array(12).keys()].map(m=>new Date(2000,m,1).toLocaleDateString("it-IT",{month:"short"}));
+    const { data: righeConfronto } = await sb.rpc("andamento_confronto");
+    const ord = (righeConfronto||[]).slice().sort((a,b)=>a.mese_indice-b.mese_indice);
+    fatturatoMensile = ord.map(r=>Number(r.fatturato_a)||0);
+    saldoMensile = ord.map(r=>Number(r.saldo_a)||0);
+    fatturatoMensileB = ord.map(r=> r.fatturato_b===null ? null : Number(r.fatturato_b));
+    saldoMensileB = ord.map(r=> r.saldo_b===null ? null : Number(r.saldo_b));
+
+    const { data: confTot } = await sb.rpc("andamento_confronto_totali");
+    const righeTot = confTot||[];
+    const norm = r=>({
+      fatturato: Number(r?.fatturato)||0, incassato: Number(r?.incassato)||0,
+      daIncassare: Number(r?.da_incassare)||0, costi: Number(r?.costi)||0, utile: Number(r?.utile)||0,
+    });
+    confrontoBarre = {
+      annoA: annoScorso, annoB: annoCorrente,
+      finA: norm(righeTot.find(r=>r.anno===annoScorso)),
+      finB: norm(righeTot.find(r=>r.anno===annoCorrente)),
+    };
+  } else {
+    const { data: mensile } = await sb.rpc("andamento_mensile", { p_periodo: periodo });
+    const righe = mensile||[];
+    mesiLabels = righe.map(r=>{
+      const [y,m] = String(r.mese).slice(0,7).split("-").map(Number);
+      return new Date(y, m-1, 1).toLocaleDateString("it-IT", periodo==="rolling12" ? {month:"short",year:"2-digit"} : {month:"short"});
+    });
+    fatturatoMensile = righe.map(r=>Number(r.fatturato)||0);
+    saldoMensile = righe.map(r=>Number(r.saldo)||0);
+  }
+
+  state._andamentoCharts = {
+    periodo, fin, confrontoBarre,
+    mesiLabels, fatturatoMensile, saldoMensile, fatturatoMensileB, saldoMensileB, legendaAnnoA, legendaAnnoB,
+  };
+  return `
+    <div class="card">
+      <h2>Andamento dell'azienda</h2>
+      <p><small class="hint">Vista di sola lettura riservata a soci/azionisti e amministratore: solo dati e totali aggregati, nessun dettaglio su singoli clienti/cantieri.</small></p>
+      <div class="pill-select" id="filtro-periodo-andamento">
+        <button data-p="rolling12" class="${periodo==="rolling12"?"active":""}">Da sempre</button>
+        <button data-p="annocorrente" class="${periodo==="annocorrente"?"active":""}">Anno corrente (${annoCorrente})</button>
+        <button data-p="annoscorso" class="${periodo==="annoscorso"?"active":""}">Anno scorso (${annoScorso})</button>
+        <button data-p="confronto" class="${periodo==="confronto"?"active":""}">Confronta ${annoScorso} vs ${annoCorrente}</button>
+      </div>
+      <p><small class="hint">Periodo selezionato: ${escapeHtml(etichettaPeriodo)}. I dati di clienti/cantieri/service order attivi e il valore di magazzino sono sempre riferiti ad oggi.</small></p>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="num">${fmtMoney(fin.fatturato)}</div><div class="lbl">Fatturato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.incassato)}</div><div class="lbl">Incassato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.daIncassare)}</div><div class="lbl">Da incassare</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.costi)}</div><div class="lbl">Costi (fatture da fornitori)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.utile)}</div><div class="lbl">Utile stimato</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(fin.saldo)}</div><div class="lbl">Saldo cassa/banca (periodo)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valMagazzino)}</div><div class="lbl">Valore magazzino (a listino, ad oggi)</div></div>
+      <div class="kpi"><div class="num">${clientiAttivi}</div><div class="lbl">Clienti attivi (ad oggi)</div></div>
+      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi (ad oggi)</div></div>
+      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi (ad oggi)</div></div>
+    </div>
+    <div class="charts-grid">
+      <div class="card">
+        <h2>Fatturato, costi e utile</h2>
+        <div class="chart-wrap"><canvas id="chart-fattcostiutile"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Composizione fatturato clienti</h2>
+        <div class="chart-wrap"><canvas id="chart-incassato"></canvas></div>
+      </div>
+      <div class="card" style="grid-column:1 / -1;">
+        <h2>Andamento mensile del fatturato</h2>
+        <div class="chart-wrap"><canvas id="chart-fatturato-mensile"></canvas></div>
+      </div>
+      <div class="card" style="grid-column:1 / -1;">
+        <h2>Saldo netto di cassa (entrate − uscite) per mese</h2>
+        <div class="chart-wrap"><canvas id="chart-cassa-mensile"></canvas></div>
+      </div>
+    </div>
+  `;
+}
+
+// Palette validata (categorica, ordine fisso): blu, arancio, verde acqua
+const COLORE_BLU = "#2a78d6", COLORE_ARANCIO = "#eb6834", COLORE_AQUA = "#1baf7a";
+let _chartInstances = {};
+function disegnaGrafico(id, config){
+  const canvas = document.getElementById(id);
+  if(!canvas || typeof Chart === "undefined") return;
+  if(_chartInstances[id]) _chartInstances[id].destroy();
+  _chartInstances[id] = new Chart(canvas.getContext("2d"), config);
+}
+function wireAndamento(){
+  document.querySelectorAll("#filtro-periodo-andamento button").forEach(b=>{
+    b.onclick = ()=>{ state.andamentoPeriodo = b.dataset.p; render(); };
+  });
+  const c = state._andamentoCharts;
+  if(!c) return;
+  const confronto = c.periodo==="confronto";
+
+  if(confronto && c.confrontoBarre){
+    const { annoA, annoB, finA, finB } = c.confrontoBarre;
+    disegnaGrafico("chart-fattcostiutile", {
+      type: "bar",
+      data: { labels: ["Fatturato","Costi","Utile"], datasets: [
+        { label:"Anno "+annoA, data:[finA.fatturato,finA.costi,finA.utile], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
+        { label:"Anno "+annoB, data:[finB.fatturato,finB.costi,finB.utile], backgroundColor: COLORE_BLU, borderRadius:4 },
+      ]},
+      options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    });
+    disegnaGrafico("chart-incassato", {
+      type: "bar",
+      data: { labels: ["Incassato","Da incassare"], datasets: [
+        { label:"Anno "+annoA, data:[finA.incassato,finA.daIncassare], backgroundColor: COLORE_ARANCIO, borderRadius:4 },
+        { label:"Anno "+annoB, data:[finB.incassato,finB.daIncassare], backgroundColor: COLORE_BLU, borderRadius:4 },
+      ]},
+      options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    });
+  } else {
+    disegnaGrafico("chart-fattcostiutile", {
+      type: "bar",
+      data: { labels: ["Fatturato","Costi","Utile"], datasets: [{ label:"Importo (€)", data: [c.fin.fatturato,c.fin.costi,c.fin.utile], backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
+      options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+    });
+    disegnaGrafico("chart-incassato", {
+      type: "doughnut",
+      data: { labels: ["Incassato","Da incassare"], datasets: [{ data: [c.fin.incassato,c.fin.daIncassare], backgroundColor:[COLORE_BLU,COLORE_ARANCIO] }] },
+      options: { plugins:{ legend:{ position:"bottom" }, tooltip:{ callbacks:{ label:(ctx)=>ctx.label+": "+fmtMoney(ctx.raw) } } } }
+    });
+  }
+
+  disegnaGrafico("chart-fatturato-mensile", {
+    type: "line",
+    data: { labels: c.mesiLabels, datasets: confronto? [
+      { label: c.legendaAnnoA, data: c.fatturatoMensile, borderColor: COLORE_ARANCIO, backgroundColor: COLORE_ARANCIO, tension:0.25, fill:false },
+      { label: c.legendaAnnoB, data: c.fatturatoMensileB, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false },
+    ] : [
+      { label:"Fatturato", data: c.fatturatoMensile, borderColor: COLORE_BLU, backgroundColor: COLORE_BLU, tension:0.25, fill:false },
+    ]},
+    options: { plugins:{ legend:{ display: confronto } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+  disegnaGrafico("chart-cassa-mensile", {
+    type: "bar",
+    data: { labels: c.mesiLabels, datasets: confronto? [
+      { label: c.legendaAnnoA, data: c.saldoMensile, backgroundColor: COLORE_ARANCIO },
+      { label: c.legendaAnnoB, data: c.saldoMensileB, backgroundColor: COLORE_BLU },
+    ] : [
+      { label:"Saldo netto", data: c.saldoMensile, backgroundColor: COLORE_BLU },
+    ]},
+    options: { plugins:{ legend:{ position:"bottom" } }, scales:{ y:{ ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+}
+
+// ============================================================
+// CLIENTI
+// ============================================================
+function statoCrmLabel(s){ const map={prospect:"Prospect",contattato:"Contattato",preventivo_inviato:"Preventivo inviato",cliente:"Cliente",cliente_inattivo:"Cliente inattivo"}; return map[s]||"Prospect"; }
+function statoCrmClass(s){ const map={prospect:"in_revisione",contattato:"in_uso",preventivo_inviato:"in_corso",cliente:"chiuso",cliente_inattivo:"danneggiato"}; return map[s]||"in_revisione"; }
+function potenzialeLabel(s){ const map={basso:"Basso",medio:"Medio",alto:"Alto"}; return map[s]||"-"; }
+function nomeUtente(id){ const p = state.data.profiles.find(x=>x.id===id); return p? (p.full_name||"-") : "-"; }
+function viewClienti(){
+  const puoModificare = ["commerciale","contabile","admin"].includes(myRole());
+  const filtro = state.filtroClientiCrm || "tutti";
+  let rows = state.data.clienti;
+  if(filtro!=="tutti") rows = rows.filter(c=>(c.stato_crm||"prospect")===filtro);
+  return `
+    ${!puoModificare? "" : `
+    <div class="card">
+      <h2>Nuovo cliente</h2>
+      <form id="form-cliente">
+        <div class="form-grid">
+          <div><label>Ragione sociale *</label><input required id="c-ragione"></div>
+          <div><label>Referente</label><input id="c-referente"></div>
+          <div><label>Telefono</label><input id="c-telefono"></div>
+          <div><label>Email</label><input type="email" id="c-email"></div>
+          <div><label>Indirizzo</label><input id="c-indirizzo"></div>
+          <div><label>Partita IVA</label><input id="c-piva"></div>
+          <div><label>Settore</label><input id="c-settore"></div>
+        </div>
+        <label>Note</label><textarea id="c-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva cliente</button></div>
+      </form>
+    </div>`}
+    <div class="card">
+      <h2>Elenco clienti (${rows.length})</h2>
+      ${exportButtonsHtml("exp-clienti")}
+      <div class="pill-select" id="filtro-crm-clienti">
+        <button data-f="tutti" class="${filtro==="tutti"?"active":""}">Tutti</button>
+        <button data-f="prospect" class="${filtro==="prospect"?"active":""}">Prospect</button>
+        <button data-f="contattato" class="${filtro==="contattato"?"active":""}">Contattato</button>
+        <button data-f="preventivo_inviato" class="${filtro==="preventivo_inviato"?"active":""}">Preventivo inviato</button>
+        <button data-f="cliente" class="${filtro==="cliente"?"active":""}">Cliente</button>
+        <button data-f="cliente_inattivo" class="${filtro==="cliente_inattivo"?"active":""}">Cliente inattivo</button>
+      </div>
+      ${rows.length===0? `<div class="empty">Nessun cliente trovato.</div>` : `
+      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>Stato CRM</th><th>Commerciale</th><th>Cantieri</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(c=>`
+          <tr>
+            <td>${escapeHtml(c.ragione_sociale)}</td>
+            <td>${escapeHtml(c.referente||"-")}</td>
+            <td>${escapeHtml(c.telefono||"-")}</td>
+            <td>${escapeHtml(c.email||"-")}</td>
+            <td><span class="badge ${statoCrmClass(c.stato_crm)}">${statoCrmLabel(c.stato_crm)}</span></td>
+            <td>${escapeHtml(nomeUtente(c.commerciale_assegnato))}</td>
+            <td>${state.data.cantieri.filter(k=>k.cliente_id===c.id).length}</td>
+            <td class="actions" style="margin:0;">
+              <button class="secondary btn-crm-cliente" data-id="${c.id}">📞 CRM</button>
+              <button class="secondary btn-doc-cliente" data-id="${c.id}">📄 Documenti</button>
+              ${puoModificare? `<button class="secondary btn-edit-cliente" data-id="${c.id}">Modifica</button>` : ""}
+            </td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireClienti(){
+  const filtro = state.filtroClientiCrm || "tutti";
+  const rows = filtro==="tutti"? state.data.clienti : state.data.clienti.filter(c=>(c.stato_crm||"prospect")===filtro);
+  const f = document.getElementById("form-cliente");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      ragione_sociale: document.getElementById("c-ragione").value.trim(),
+      referente: document.getElementById("c-referente").value.trim() || null,
+      telefono: document.getElementById("c-telefono").value.trim() || null,
+      email: document.getElementById("c-email").value.trim() || null,
+      indirizzo: document.getElementById("c-indirizzo").value.trim() || null,
+      piva: document.getElementById("c-piva").value.trim() || null,
+      settore: document.getElementById("c-settore").value.trim() || null,
+      note: document.getElementById("c-note").value.trim() || null,
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("clienti").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll("#filtro-crm-clienti button").forEach(b=>{
+    b.onclick = ()=>{ state.filtroClientiCrm = b.dataset.f; render(); };
+  });
+  wireExportButtons("exp-clienti", "clienti", "Clienti",
+    ["Ragione sociale","Referente","Telefono","Email","Stato CRM","Commerciale","Cantieri"],
+    ()=>rows.map(c=>[c.ragione_sociale, c.referente||"", c.telefono||"", c.email||"", statoCrmLabel(c.stato_crm), nomeUtente(c.commerciale_assegnato), state.data.cantieri.filter(k=>k.cliente_id===c.id).length])
+  );
+  document.querySelectorAll(".btn-edit-cliente").forEach(b=>{ b.onclick = ()=>editCliente(b.dataset.id); });
+  document.querySelectorAll(".btn-crm-cliente").forEach(b=>{
+    b.onclick = ()=>{
+      const c = state.data.clienti.find(x=>x.id===b.dataset.id);
+      renderModaleCrm(b.dataset.id, "CRM — "+(c? c.ragione_sociale : ""));
+    };
+  });
+  document.querySelectorAll(".btn-doc-cliente").forEach(b=>{
+    b.onclick = ()=>{
+      const c = state.data.clienti.find(x=>x.id===b.dataset.id);
+      renderModaleDocumenti("cliente", b.dataset.id, "Documenti — "+(c? c.ragione_sociale : ""));
+    };
+  });
+}
+function editCliente(id){
+  const c = state.data.clienti.find(x=>x.id===id);
+  if(!c) return;
+  const commercialiOpts = state.data.profiles.map(p=>`<option value="${p.id}" ${p.id===c.commerciale_assegnato?"selected":""}>${escapeHtml(p.full_name||"-")}</option>`).join("");
+  const body = `
+    <form id="form-edit-cliente">
+      <div class="form-grid">
+        <div><label>Ragione sociale *</label><input required id="ec-ragione" value="${escapeHtml(c.ragione_sociale)}"></div>
+        <div><label>Referente</label><input id="ec-referente" value="${escapeHtml(c.referente||"")}"></div>
+        <div><label>Telefono</label><input id="ec-telefono" value="${escapeHtml(c.telefono||"")}"></div>
+        <div><label>Email</label><input type="email" id="ec-email" value="${escapeHtml(c.email||"")}"></div>
+        <div><label>Indirizzo</label><input id="ec-indirizzo" value="${escapeHtml(c.indirizzo||"")}"></div>
+        <div><label>Partita IVA</label><input id="ec-piva" value="${escapeHtml(c.piva||"")}"></div>
+        <div><label>Settore</label><input id="ec-settore" value="${escapeHtml(c.settore||"")}"></div>
+      </div>
+      <label>Note</label><textarea id="ec-note">${escapeHtml(c.note||"")}</textarea>
+      <h3 style="margin-top:18px;">CRM</h3>
+      <div class="form-grid">
+        <div><label>Stato pipeline</label>
+          <select id="ec-stato-crm">
+            <option value="prospect" ${c.stato_crm==="prospect"?"selected":""}>Prospect</option>
+            <option value="contattato" ${c.stato_crm==="contattato"?"selected":""}>Contattato</option>
+            <option value="preventivo_inviato" ${c.stato_crm==="preventivo_inviato"?"selected":""}>Preventivo inviato</option>
+            <option value="cliente" ${c.stato_crm==="cliente"?"selected":""}>Cliente</option>
+            <option value="cliente_inattivo" ${c.stato_crm==="cliente_inattivo"?"selected":""}>Cliente inattivo</option>
+          </select>
+        </div>
+        <div><label>Potenziale commerciale</label>
+          <select id="ec-potenziale">
+            <option value="">-- non definito --</option>
+            <option value="basso" ${c.potenziale==="basso"?"selected":""}>Basso</option>
+            <option value="medio" ${c.potenziale==="medio"?"selected":""}>Medio</option>
+            <option value="alto" ${c.potenziale==="alto"?"selected":""}>Alto</option>
+          </select>
+        </div>
+        <div><label>Commerciale assegnato</label><select id="ec-commerciale"><option value="">-- nessuno --</option>${commercialiOpts}</select></div>
+        <div><label>Ultimo contatto</label><input type="date" id="ec-ultimo-contatto" value="${c.ultimo_contatto||""}"></div>
+        <div><label>Prossimo contatto</label><input type="date" id="ec-prossimo-contatto" value="${c.prossimo_contatto||""}"></div>
+      </div>
+      <label>Servizi/prodotti di interesse</label><textarea id="ec-servizi">${escapeHtml(c.servizi_interesse||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina cliente</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica cliente", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("clienti", id, `il cliente "${c.ragione_sociale}" (e tutti i suoi cantieri)`);
+    bodyEl.querySelector("#form-edit-cliente").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        ragione_sociale: bodyEl.querySelector("#ec-ragione").value.trim(),
+        referente: bodyEl.querySelector("#ec-referente").value.trim() || null,
+        telefono: bodyEl.querySelector("#ec-telefono").value.trim() || null,
+        email: bodyEl.querySelector("#ec-email").value.trim() || null,
+        indirizzo: bodyEl.querySelector("#ec-indirizzo").value.trim() || null,
+        piva: bodyEl.querySelector("#ec-piva").value.trim() || null,
+        settore: bodyEl.querySelector("#ec-settore").value.trim() || null,
+        note: bodyEl.querySelector("#ec-note").value.trim() || null,
+        stato_crm: bodyEl.querySelector("#ec-stato-crm").value,
+        potenziale: bodyEl.querySelector("#ec-potenziale").value || null,
+        commerciale_assegnato: bodyEl.querySelector("#ec-commerciale").value || null,
+        ultimo_contatto: bodyEl.querySelector("#ec-ultimo-contatto").value || null,
+        prossimo_contatto: bodyEl.querySelector("#ec-prossimo-contatto").value || null,
+        servizi_interesse: bodyEl.querySelector("#ec-servizi").value.trim() || null,
+      };
+      const { error } = await sb.from("clienti").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
+// CRM: storico attività (chiamate, email, incontri, note) per cliente
+// ============================================================
+function renderModaleCrm(clienteId, titolo){
+  const c = state.data.clienti.find(x=>x.id===clienteId);
+  const attivita = state.data.attivitaCrm.filter(a=>a.cliente_id===clienteId);
+  const puoScrivere = ["commerciale","contabile","admin"].includes(myRole());
+  const body = `
+    ${c? `<p>
+      <span class="badge ${statoCrmClass(c.stato_crm)}">${statoCrmLabel(c.stato_crm)}</span>
+      ${c.potenziale? ` &nbsp; <strong>Potenziale:</strong> ${potenzialeLabel(c.potenziale)}` : ""}
+      ${c.commerciale_assegnato? ` &nbsp; <strong>Assegnato a:</strong> ${escapeHtml(nomeUtente(c.commerciale_assegnato))}` : ""}
+    </p>
+    ${c.ultimo_contatto || c.prossimo_contatto? `<p><small class="hint">
+      ${c.ultimo_contatto? "Ultimo contatto: "+fmtDateOnly(c.ultimo_contatto)+". " : ""}
+      ${c.prossimo_contatto? "Prossimo contatto: "+fmtDateOnly(c.prossimo_contatto)+"." : ""}
+    </small></p>` : ""}
+    ${c.servizi_interesse? `<p><strong>Interessi:</strong> ${escapeHtml(c.servizi_interesse)}</p>` : ""}` : ""}
+    ${puoScrivere? `
+    <form id="form-attivita-crm">
+      <div class="form-grid">
+        <div><label>Tipo</label>
+          <select id="ac-tipo">
+            <option value="chiamata">Chiamata</option>
+            <option value="email">Email</option>
+            <option value="incontro">Incontro</option>
+            <option value="nota">Nota</option>
+            <option value="altro">Altro</option>
+          </select>
+        </div>
+      </div>
+      <label>Descrizione</label><textarea id="ac-descrizione" required placeholder="Cosa è successo, cosa è stato deciso..."></textarea>
+      <div style="margin-top:10px;"><button type="submit">Aggiungi attività</button></div>
+    </form>` : ""}
+    <table style="margin-top:14px;"><thead><tr><th>Data</th><th>Tipo</th><th>Descrizione</th><th>Di</th>${myRole()==="admin"?"<th></th>":""}</tr></thead>
+    <tbody>
+      ${attivita.length===0? `<tr><td colspan="5" class="empty">Nessuna attività registrata.</td></tr>` : attivita.map(a=>`
+        <tr>
+          <td>${fmtDate(a.data)}</td>
+          <td>${escapeHtml(a.tipo)}</td>
+          <td>${escapeHtml(a.descrizione)}</td>
+          <td>${escapeHtml(nomeUtente(a.creato_da))}</td>
+          ${myRole()==="admin"? `<td><button class="secondary btn-elimina-attivita-crm" data-id="${a.id}" style="padding:2px 8px;font-size:11px;">Elimina</button></td>` : ""}
+        </tr>
+      `).join("")}
+    </tbody></table>
+  `;
+  openModal(titolo, body, (bodyEl)=>{
+    const f = bodyEl.querySelector("#form-attivita-crm");
+    if(f) f.onsubmit = async (e)=>{
+      e.preventDefault();
+      const descrizione = bodyEl.querySelector("#ac-descrizione").value.trim();
+      if(!descrizione) return;
+      const { error } = await sb.from("attivita_crm").insert({
+        cliente_id: clienteId, tipo: bodyEl.querySelector("#ac-tipo").value, descrizione, creato_da: state.session.user.id,
+      });
+      if(error){ alert("Errore: "+error.message); return; }
+      await loadAll();
+      renderModaleCrm(clienteId, titolo);
+    };
+    bodyEl.querySelectorAll(".btn-elimina-attivita-crm").forEach(b=>{
+      b.onclick = async ()=>{
+        if(!confirm("Eliminare questa attività?")) return;
+        const { error } = await sb.from("attivita_crm").delete().eq("id", b.dataset.id);
+        if(error){ alert("Errore: "+error.message); return; }
+        await loadAll();
+        renderModaleCrm(clienteId, titolo);
+      };
+    });
+  });
+}
+
+// ============================================================
+// DOCUMENTI (upload/scansione/foto, legati a cliente o cantiere)
+// ============================================================
+function renderModaleDocumenti(entitaTipo, entitaId, titolo){
+  const docs = state.data.documenti.filter(x=>x.entita_tipo===entitaTipo && x.entita_id===entitaId);
+  const ruolo = myRole();
+  const puoCaricare = ["commerciale","contabile","admin"].includes(ruolo);
+  const body = `
+    ${puoCaricare? `
+    <form id="form-documento">
+      <label>Carica file, scatta una foto o scansiona il documento</label>
+      <input type="file" id="doc-file" accept="image/*,application/pdf" capture="environment" required>
+      <div style="margin-top:10px;"><button type="submit">Carica documento</button></div>
+    </form>` : ""}
+    <div id="doc-upload-msg"></div>
+    <table style="margin-top:14px;"><thead><tr><th>File</th><th>Caricato il</th><th></th></tr></thead>
+    <tbody>
+      ${docs.length===0? `<tr><td colspan="3" class="empty">Nessun documento caricato.</td></tr>` : docs.map(doc=>`
+        <tr>
+          <td><a href="#" class="link-documento" data-path="${escapeHtml(doc.path||"")}">${escapeHtml(doc.nome_file)}</a></td>
+          <td>${fmtDate(doc.created_at)}</td>
+          <td>${ruolo==="admin"? `<button class="secondary btn-elimina-doc" data-id="${doc.id}">Elimina</button>` : ""}</td>
+        </tr>
+      `).join("")}
+    </tbody></table>
+  `;
+  openModal(titolo, body, (bodyEl)=>{
+    const f = bodyEl.querySelector("#form-documento");
+    if(f) f.onsubmit = async (e)=>{
+      e.preventDefault();
+      const input = bodyEl.querySelector("#doc-file");
+      const file = input.files[0];
+      if(!file) return;
+      const msg = bodyEl.querySelector("#doc-upload-msg");
+      msg.innerHTML = `<div class="msg">Caricamento in corso...</div>`;
+      const path = `${entitaTipo}/${entitaId}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await sb.storage.from("documenti").upload(path, file);
+      if(upErr){ msg.innerHTML = `<div class="msg error">Errore caricamento: ${escapeHtml(upErr.message)}</div>`; return; }
+      // Il bucket "documenti" è privato: salviamo solo il percorso interno,
+      // il link per aprirlo viene generato al volo (valido un'ora) solo per chi ha accesso.
+      const { error: insErr } = await sb.from("documenti").insert({
+        entita_tipo: entitaTipo, entita_id: entitaId, nome_file: file.name,
+        path, content_type: file.type || null, caricato_da: state.session.user.id,
+      });
+      if(insErr){ msg.innerHTML = `<div class="msg error">Errore salvataggio: ${escapeHtml(insErr.message)}</div>`; return; }
+      await loadAll();
+      renderModaleDocumenti(entitaTipo, entitaId, titolo);
+    };
+    bodyEl.querySelectorAll(".link-documento").forEach(a=>{
+      a.onclick = async (e)=>{
+        e.preventDefault();
+        const path = a.dataset.path;
+        if(!path){ alert("Documento non disponibile (caricato prima dell'aggiornamento di sicurezza)."); return; }
+        const { data, error } = await sb.storage.from("documenti").createSignedUrl(path, 3600);
+        if(error || !data){ alert("Errore apertura documento: "+(error?error.message:"")); return; }
+        window.open(data.signedUrl, "_blank", "noopener");
+      };
+    });
+    bodyEl.querySelectorAll(".btn-elimina-doc").forEach(b=>{
+      b.onclick = async ()=>{
+        if(!confirm("Eliminare questo documento?")) return;
+        const { error } = await sb.from("documenti").delete().eq("id", b.dataset.id);
+        if(error){ alert("Errore: "+error.message); return; }
+        await loadAll();
+        renderModaleDocumenti(entitaTipo, entitaId, titolo);
+      };
+    });
+  });
+}
+
+// ============================================================
+// CANTIERI
+// ============================================================
+function viewCantieri(){
+  const rows = state.data.cantieri;
+  const puoModificare = ["commerciale","contabile","admin"].includes(myRole());
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    ${!puoModificare? "" : `
+    <div class="card">
+      <h2>Nuovo cantiere</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-cantiere">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="k-cliente">${clientiOpts}</select></div>
+          <div><label>Nome cantiere *</label><input required id="k-nome"></div>
+          <div><label>Indirizzo</label><input id="k-indirizzo"></div>
+          <div><label>Referente</label><input id="k-referente"></div>
+          <div><label>Stato</label>
+            <select id="k-stato"><option value="attivo">Attivo</option><option value="sospeso">Sospeso</option><option value="concluso">Concluso</option></select>
+          </div>
+        </div>
+        <label>Note</label><textarea id="k-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva cantiere</button></div>
+      </form>`}
+    </div>`}
+    <div class="card">
+      <h2>Elenco cantieri (${rows.length})</h2>
+      ${exportButtonsHtml("exp-cantieri")}
+      ${rows.length===0? `<div class="empty">Nessun cantiere inserito.</div>` : `
+      <table><thead><tr><th>Nome</th><th>Cliente</th><th>Indirizzo</th><th>Referente</th><th>Stato</th><th>Pezzi presenti</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(k=>`
+          <tr>
+            <td>${escapeHtml(k.nome)}</td>
+            <td>${escapeHtml(clienteNome(k.cliente_id))}</td>
+            <td>${escapeHtml(k.indirizzo||"-")}</td>
+            <td>${escapeHtml(k.referente||"-")}</td>
+            <td>${badge(k.stato)}</td>
+            <td>${state.data.pezzi.filter(p=>p.cantiere_id===k.id).length}</td>
+            <td class="actions" style="margin:0;">
+              <button class="secondary btn-doc-cantiere" data-id="${k.id}">📄 Documenti</button>
+              ${puoModificare? `<button class="secondary btn-edit-cantiere" data-id="${k.id}">Modifica</button>` : ""}
+            </td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireCantieri(){
+  const f = document.getElementById("form-cantiere");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: document.getElementById("k-cliente").value,
+      nome: document.getElementById("k-nome").value.trim(),
+      indirizzo: document.getElementById("k-indirizzo").value.trim() || null,
+      referente: document.getElementById("k-referente").value.trim() || null,
+      stato: document.getElementById("k-stato").value,
+      note: document.getElementById("k-note").value.trim() || null,
+    };
+    const { error } = await sb.from("cantieri").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-edit-cantiere").forEach(b=>{ b.onclick = ()=>editCantiere(b.dataset.id); });
+  document.querySelectorAll(".btn-doc-cantiere").forEach(b=>{
+    b.onclick = ()=>{
+      const k = state.data.cantieri.find(x=>x.id===b.dataset.id);
+      renderModaleDocumenti("cantiere", b.dataset.id, "Documenti — "+(k? k.nome : ""));
+    };
+  });
+  wireExportButtons("exp-cantieri", "cantieri", "Cantieri",
+    ["Nome","Cliente","Indirizzo","Referente","Stato","Pezzi presenti"],
+    ()=>state.data.cantieri.map(k=>[k.nome, clienteNome(k.cliente_id), k.indirizzo||"", k.referente||"", statoLabel(k.stato), state.data.pezzi.filter(p=>p.cantiere_id===k.id).length])
+  );
+}
+function editCantiere(id){
+  const k = state.data.cantieri.find(x=>x.id===id);
+  if(!k) return;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}" ${c.id===k.cliente_id?"selected":""}>${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  const body = `
+    <form id="form-edit-cantiere">
+      <div class="form-grid">
+        <div><label>Cliente *</label><select required id="ek-cliente">${clientiOpts}</select></div>
+        <div><label>Nome cantiere *</label><input required id="ek-nome" value="${escapeHtml(k.nome)}"></div>
+        <div><label>Indirizzo</label><input id="ek-indirizzo" value="${escapeHtml(k.indirizzo||"")}"></div>
+        <div><label>Referente</label><input id="ek-referente" value="${escapeHtml(k.referente||"")}"></div>
+        <div><label>Stato</label>
+          <select id="ek-stato">
+            <option value="attivo" ${k.stato==="attivo"?"selected":""}>Attivo</option>
+            <option value="sospeso" ${k.stato==="sospeso"?"selected":""}>Sospeso</option>
+            <option value="concluso" ${k.stato==="concluso"?"selected":""}>Concluso</option>
+          </select>
+        </div>
+      </div>
+      <label>Note</label><textarea id="ek-note">${escapeHtml(k.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina cantiere</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica cantiere", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("cantieri", id, `il cantiere "${k.nome}"`);
+    bodyEl.querySelector("#form-edit-cantiere").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        cliente_id: bodyEl.querySelector("#ek-cliente").value,
+        nome: bodyEl.querySelector("#ek-nome").value.trim(),
+        indirizzo: bodyEl.querySelector("#ek-indirizzo").value.trim() || null,
+        referente: bodyEl.querySelector("#ek-referente").value.trim() || null,
+        stato: bodyEl.querySelector("#ek-stato").value,
+        note: bodyEl.querySelector("#ek-note").value.trim() || null,
+      };
+      const { error } = await sb.from("cantieri").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
+// MAGAZZINO (ARTICOLI)
+// ============================================================
+function viewMagazzino(){
+  const rows = state.data.articoli;
+  const puoModificare = ["magazzino","admin"].includes(myRole());
+  const articoliConLunghezza = rows.filter(a=>a.lunghezza_unitaria>0);
+  return `
+    ${!puoModificare? "" : `
+    <div class="card">
+      <h2>Nuovo articolo</h2>
+      <form id="form-articolo">
+        <div class="form-grid">
+          <div><label>Codice articolo *</label><input required id="a-codice"></div>
+          <div><label>Descrizione *</label><input required id="a-descrizione"></div>
+          <div><label>Dimensioni</label><input id="a-dimensioni" placeholder="es. 5m x 10cm"></div>
+          <div><label>Peso</label><input id="a-peso" placeholder="es. 2.5 kg"></div>
+          <div><label>Lunghezza per pezzo (m)</label><input type="number" step="0.01" min="0" id="a-lunghezza" placeholder="es. 3 (solo per articoli lineari)"></div>
+          <div><label>URL immagine</label><input id="a-immagine" placeholder="https://..."></div>
+        </div>
+        <label>Note</label><textarea id="a-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva articolo</button></div>
+      </form>
+    </div>`}
+    <div class="card">
+      <h2>Catalogo articoli (${rows.length})</h2>
+      ${exportButtonsHtml("exp-articoli")}
+      ${rows.length===0? `<div class="empty">Nessun articolo inserito.</div>` : `
+      <table><thead><tr><th>Foto</th><th>Codice</th><th>Descrizione</th><th>Dimensioni</th><th>Peso</th><th>Pezzi totali</th><th>Disponibili</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <tbody>
+        ${rows.map(a=>{
+          const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
+          const disp = pezziArt.filter(p=>p.stato==="disponibile").length;
+          return `<tr>
+            <td>${a.immagine_url? `<img src="${escapeHtml(a.immagine_url)}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border);" onerror="this.style.display='none';">` : `<span class="hint">-</span>`}</td>
+            <td>${escapeHtml(a.codice)}</td>
+            <td>${escapeHtml(a.descrizione)}</td>
+            <td>${escapeHtml(a.dimensioni||"-")}</td>
+            <td>${escapeHtml(a.peso||"-")}</td>
+            <td>${pezziArt.length}</td>
+            <td>${disp}</td>
+            ${puoModificare? `<td><button class="secondary btn-edit-articolo" data-id="${a.id}">Modifica</button></td>` : ""}
+          </tr>`;
+        }).join("")}
+      </tbody></table>`}
+    </div>
+    <div class="card">
+      <h2>Calcolo pezzi per metratura</h2>
+      <p><small class="hint">Solo per gli articoli a cui è stata indicata una "Lunghezza per pezzo": dice quanti pezzi servono per raggiungere la metratura richiesta.</small></p>
+      ${articoliConLunghezza.length===0? `<div class="empty">Nessun articolo ha ancora una lunghezza per pezzo impostata. Aggiungila modificando un articolo lineare (es. profili, tubi, pannelli a barra).</div>` : `
+      <div class="form-grid">
+        <div><label>Articolo</label><select id="mt-articolo">${articoliConLunghezza.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)} (${a.lunghezza_unitaria} m/pezzo)</option>`).join("")}</select></div>
+        <div><label>Metratura richiesta (m)</label><input type="number" step="0.01" min="0" id="mt-richiesta" value="1"></div>
+      </div>
+      <div id="mt-risultato" class="msg ok" style="margin-top:6px;"></div>`}
+    </div>
+  `;
+}
+function wireMagazzino(){
+  const f = document.getElementById("form-articolo");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      codice: document.getElementById("a-codice").value.trim(),
+      descrizione: document.getElementById("a-descrizione").value.trim(),
+      dimensioni: document.getElementById("a-dimensioni").value.trim() || null,
+      peso: document.getElementById("a-peso").value.trim() || null,
+      lunghezza_unitaria: document.getElementById("a-lunghezza").value.trim()? Number(document.getElementById("a-lunghezza").value) : null,
+      immagine_url: document.getElementById("a-immagine").value.trim() || null,
+      note: document.getElementById("a-note").value.trim() || null,
+    };
+    const { error } = await sb.from("articoli").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-edit-articolo").forEach(b=>{ b.onclick = ()=>editArticolo(b.dataset.id); });
+  wireExportButtons("exp-articoli", "magazzino", "Magazzino",
+    ["Codice","Descrizione","Dimensioni","Peso","Pezzi totali","Disponibili"],
+    ()=>state.data.articoli.map(a=>{
+      const pezziArt = state.data.pezzi.filter(p=>p.articolo_id===a.id);
+      return [a.codice, a.descrizione, a.dimensioni||"", a.peso||"", pezziArt.length, pezziArt.filter(p=>p.stato==="disponibile").length];
+    })
+  );
+  const selMt = document.getElementById("mt-articolo");
+  const inputMt = document.getElementById("mt-richiesta");
+  const risMt = document.getElementById("mt-risultato");
+  function aggiornaMetratura(){
+    if(!selMt || !risMt) return;
+    const a = state.data.articoli.find(x=>x.id===selMt.value);
+    const richiesta = Number(inputMt.value)||0;
+    if(!a || !a.lunghezza_unitaria){ risMt.textContent = "-"; return; }
+    const pezziNecessari = Math.ceil(richiesta / a.lunghezza_unitaria);
+    const disponibili = state.data.pezzi.filter(p=>p.articolo_id===a.id && p.stato==="disponibile").length;
+    risMt.className = "msg " + (pezziNecessari<=disponibili? "ok" : "error");
+    risMt.textContent = `Servono ${pezziNecessari} pezzi da ${a.lunghezza_unitaria} m (totale ${(pezziNecessari*a.lunghezza_unitaria).toFixed(2)} m). Disponibili in magazzino: ${disponibili}.` + (pezziNecessari>disponibili? " Attenzione: non ce ne sono abbastanza in magazzino." : "");
+  }
+  if(selMt){ selMt.onchange = aggiornaMetratura; inputMt.oninput = aggiornaMetratura; aggiornaMetratura(); }
+}
+function editArticolo(id){
+  const a = state.data.articoli.find(x=>x.id===id);
+  if(!a) return;
+  const body = `
+    <form id="form-edit-articolo">
+      <div class="form-grid">
+        <div><label>Codice articolo *</label><input required id="ea-codice" value="${escapeHtml(a.codice)}"></div>
+        <div><label>Descrizione *</label><input required id="ea-descrizione" value="${escapeHtml(a.descrizione)}"></div>
+        <div><label>Dimensioni</label><input id="ea-dimensioni" value="${escapeHtml(a.dimensioni||"")}"></div>
+        <div><label>Peso</label><input id="ea-peso" value="${escapeHtml(a.peso||"")}"></div>
+        <div><label>Lunghezza per pezzo (m)</label><input type="number" step="0.01" min="0" id="ea-lunghezza" value="${a.lunghezza_unitaria!=null?a.lunghezza_unitaria:""}" placeholder="solo per articoli lineari"></div>
+        <div><label>URL immagine</label><input id="ea-immagine" value="${escapeHtml(a.immagine_url||"")}"></div>
+      </div>
+      ${a.immagine_url? `<img src="${escapeHtml(a.immagine_url)}" alt="" style="max-width:120px;max-height:120px;border-radius:8px;border:1px solid var(--border);margin-top:6px;" onerror="this.style.display='none';">` : ""}
+      <label>Note</label><textarea id="ea-note">${escapeHtml(a.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina articolo</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica articolo", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("articoli", id, `l'articolo "${a.codice}"`);
+    bodyEl.querySelector("#form-edit-articolo").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        codice: bodyEl.querySelector("#ea-codice").value.trim(),
+        descrizione: bodyEl.querySelector("#ea-descrizione").value.trim(),
+        dimensioni: bodyEl.querySelector("#ea-dimensioni").value.trim() || null,
+        peso: bodyEl.querySelector("#ea-peso").value.trim() || null,
+        lunghezza_unitaria: bodyEl.querySelector("#ea-lunghezza").value.trim()? Number(bodyEl.querySelector("#ea-lunghezza").value) : null,
+        immagine_url: bodyEl.querySelector("#ea-immagine").value.trim() || null,
+        note: bodyEl.querySelector("#ea-note").value.trim() || null,
+      };
+      const { error } = await sb.from("articoli").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
+// PEZZI (DTR)
+// ============================================================
+function viewPezzi(){
+  const rows = state.data.pezzi;
+  const puoModificare = ["magazzino","admin"].includes(myRole());
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  return `
+    ${!puoModificare? "" : `
+    <div class="card">
+      <h2>Nuovo pezzo</h2>
+      ${state.data.articoli.length===0? `<div class="msg error">Devi prima creare almeno un articolo nel Magazzino.</div>` : `
+      <form id="form-pezzo">
+        <div class="form-grid">
+          <div><label>Articolo *</label><select required id="p-articolo">${articoliOpts}</select></div>
+          <div><label>DTR (codice univoco) *</label>
+            <div style="display:flex;gap:6px;">
+              <input required id="p-dtr" placeholder="es. DTR-000123" style="flex:1;">
+              <button type="button" class="secondary" id="btn-scan-dtr">📷</button>
+            </div>
+          </div>
+          <div><label>Posizione in magazzino</label><input id="p-posizione" placeholder="es. Scaffale A3"></div>
+        </div>
+        <div style="margin-top:10px;"><button type="submit">Salva pezzo</button></div>
+      </form>`}
+    </div>`}
+    <div class="card">
+      <h2>Elenco pezzi (${rows.length})</h2>
+      <div class="actions">
+        <button class="secondary" id="btn-stampa-etichette-tutte">🏷️ Stampa etichette QR (disponibili)</button>
+      </div>
+      <div class="pill-select" id="filtro-stato">
+        <button data-f="tutti" class="active">Tutti</button>
+        <button data-f="disponibile">Disponibili</button>
+        <button data-f="in_uso">In uso</button>
+        <button data-f="in_revisione">In revisione</button>
+        <button data-f="da_riparare">Da riparare</button>
+        <button data-f="danneggiato">Danneggiati</button>
+        <button data-f="fuori_servizio">Fuori servizio</button>
+      </div>
+      <div id="tabella-pezzi"></div>
+    </div>
+  `;
+}
+function renderTabellaPezzi(filtro){
+  let rows = state.data.pezzi;
+  if(filtro && filtro!=="tutti") rows = rows.filter(p=>p.stato===filtro);
+  const puoModificare = ["magazzino","admin"].includes(myRole());
+  const html = rows.length===0? `<div class="empty">Nessun pezzo trovato.</div>` : `
+    <table><thead><tr><th>DTR</th><th>Articolo</th><th>Stato</th><th>Posizione</th><th>Cliente/Cantiere</th><th></th></tr></thead>
+    <tbody>
+      ${rows.map(p=>`
+        <tr>
+          <td>${escapeHtml(p.dtr)}</td>
+          <td>${escapeHtml(articoloLabel(p.articolo_id))}</td>
+          <td>${badge(p.stato)}</td>
+          <td>${escapeHtml(p.posizione||"-")}</td>
+          <td>${p.cliente_id? escapeHtml(clienteNome(p.cliente_id))+(p.cantiere_id? " / "+escapeHtml(cantiereNome(p.cantiere_id)) : "") : "-"}</td>
+          <td style="white-space:nowrap;">
+            <button class="secondary btn-etichetta-pezzo" data-id="${p.id}">🏷️</button>
+            ${puoModificare? `<button class="secondary btn-edit-pezzo" data-id="${p.id}">Modifica</button>` : ""}
+          </td>
+        </tr>
+      `).join("")}
+    </tbody></table>`;
+  document.getElementById("tabella-pezzi").innerHTML = html;
+  document.querySelectorAll(".btn-edit-pezzo").forEach(b=>{ b.onclick = ()=>editPezzo(b.dataset.id, filtro); });
+  document.querySelectorAll(".btn-etichetta-pezzo").forEach(b=>{
+    b.onclick = ()=>{
+      const p = state.data.pezzi.find(x=>x.id===b.dataset.id);
+      if(p) stampaEtichetteQR([p]);
+    };
+  });
+}
+function wirePezzi(){
+  const f = document.getElementById("form-pezzo");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      articolo_id: document.getElementById("p-articolo").value,
+      dtr: document.getElementById("p-dtr").value.trim(),
+      posizione: document.getElementById("p-posizione").value.trim() || null,
+      stato: "disponibile",
+    };
+    const { error } = await sb.from("pezzi").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnStampaTutte = document.getElementById("btn-stampa-etichette-tutte");
+  if(btnStampaTutte) btnStampaTutte.onclick = ()=>{
+    const disponibili = state.data.pezzi.filter(p=>p.stato==="disponibile");
+    if(disponibili.length===0){ alert("Nessun pezzo disponibile da etichettare."); return; }
+    if(disponibili.length>60 && !confirm(`Stai per generare ${disponibili.length} etichette: potrebbe richiedere qualche secondo. Continuare?`)) return;
+    stampaEtichetteQR(disponibili);
+  };
+  const btnScanDtr = document.getElementById("btn-scan-dtr");
+  if(btnScanDtr) btnScanDtr.onclick = ()=>{
+    apriScannerQR((testo)=>{ document.getElementById("p-dtr").value = testo; });
+  };
+  renderTabellaPezzi("tutti");
+  document.querySelectorAll("#filtro-stato button").forEach(b=>{
+    b.onclick = ()=>{
+      document.querySelectorAll("#filtro-stato button").forEach(x=>x.classList.remove("active"));
+      b.classList.add("active");
+      renderTabellaPezzi(b.dataset.f);
+    };
+  });
+}
+function editPezzo(id){
+  const p = state.data.pezzi.find(x=>x.id===id);
+  if(!p) return;
+  const soloAdmin = myRole()==="admin";
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}" ${a.id===p.articolo_id?"selected":""}>${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  const stati = ["disponibile","in_uso","in_revisione","da_riparare","danneggiato","fuori_servizio"];
+  const body = `
+    <form id="form-edit-pezzo">
+      <div class="form-grid">
+        <div><label>Articolo *</label><select required id="ep-articolo">${articoliOpts}</select></div>
+        <div><label>DTR (codice univoco) *</label>
+          <input required id="ep-dtr" value="${escapeHtml(p.dtr)}" ${soloAdmin? "" : "readonly disabled"}>
+          ${soloAdmin? "" : `<small class="hint">Solo l'amministratore può modificare il codice DTR.</small>`}
+        </div>
+        <div><label>Posizione in magazzino</label><input id="ep-posizione" value="${escapeHtml(p.posizione||"")}"></div>
+        <div><label>Stato</label><select id="ep-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
+      </div>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina pezzo</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica pezzo", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("pezzi", id, `il pezzo "${p.dtr}"`);
+    bodyEl.querySelector("#form-edit-pezzo").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        articolo_id: bodyEl.querySelector("#ep-articolo").value,
+        posizione: bodyEl.querySelector("#ep-posizione").value.trim() || null,
+        stato: bodyEl.querySelector("#ep-stato").value,
+        updated_at: new Date().toISOString(),
+      };
+      if(soloAdmin) payload.dtr = bodyEl.querySelector("#ep-dtr").value.trim();
+      const { error } = await sb.from("pezzi").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
+// SERVICE ORDER + CARRELLO
+// ============================================================
+function viewServiceOrder(){
+  if(state.soAperto){
+    return viewServiceOrderDettaglio(state.soAperto);
+  }
+  const rows = state.data.serviceOrders;
+  const puoCreare = ["commerciale","admin"].includes(myRole());
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    ${!puoCreare? "" : `
+    <div class="card">
+      <h2>Nuovo Service Order</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-so">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="so-cliente">${clientiOpts}</select></div>
+          <div><label>Cantiere</label><select id="so-cantiere"><option value="">-- nessuno --</option></select></div>
+          <div><label>Scadenza prevista</label><input type="date" id="so-scadenza"></div>
+        </div>
+        <label>Note</label><textarea id="so-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Crea Service Order</button></div>
+      </form>`}
+    </div>`}
+    <div class="card">
+      <h2>Elenco Service Order (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun Service Order creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Apertura</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(s=>`
+          <tr>
+            <td>#${soNumero(s.numero)}</td>
+            <td>${escapeHtml(clienteNome(s.cliente_id))}</td>
+            <td>${escapeHtml(cantiereNome(s.cantiere_id))}</td>
+            <td>${badge(s.stato)}</td>
+            <td>${fmtDate(s.data_apertura)}</td>
+            <td><button class="secondary btn-apri-so" data-id="${s.id}">Apri</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireServiceOrder(){
+  if(state.soAperto){ wireServiceOrderDettaglio(state.soAperto); return; }
+  const selCliente = document.getElementById("so-cliente");
+  const selCantiere = document.getElementById("so-cantiere");
+  function aggiornaCantieri(){
+    if(!selCliente) return;
+    const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
+      .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
+    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+  }
+  if(selCliente){
+    aggiornaCantieri();
+    selCliente.onchange = aggiornaCantieri;
+  }
+  const f = document.getElementById("form-so");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: selCliente.value,
+      cantiere_id: selCantiere.value || null,
+      data_scadenza: document.getElementById("so-scadenza").value || null,
+      note: document.getElementById("so-note").value.trim() || null,
+      stato: "aperto",
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("service_orders").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-apri-so").forEach(b=>{
+    b.onclick = ()=>{ state.soAperto = b.dataset.id; render(); };
+  });
+}
+
+function viewServiceOrderDettaglio(id){
+  const so = state.data.serviceOrders.find(s=>s.id===id);
+  if(!so){ state.soAperto=null; return viewServiceOrder(); }
+  const righe = state.data.righe.filter(r=>r.service_order_id===id);
+  const pezziDisponibili = state.data.pezzi.filter(p=>p.stato==="disponibile");
+  const pezziQui = state.data.pezzi.filter(p=>p.cliente_id===so.cliente_id && (!so.cantiere_id || p.cantiere_id===so.cantiere_id) && p.stato==="in_uso");
+  const optsDisponibili = pezziDisponibili.map(p=>`<option value="${p.id}">${escapeHtml(p.dtr)} - ${escapeHtml(articoloLabel(p.articolo_id))}</option>`).join("");
+  const optsQui = pezziQui.map(p=>`<option value="${p.id}">${escapeHtml(p.dtr)} - ${escapeHtml(articoloLabel(p.articolo_id))}</option>`).join("");
+  return `
+    <button class="secondary" id="btn-torna-so">&larr; Torna all'elenco</button>
+    <div class="card" style="margin-top:14px;">
+      <h2>Service Order #${soNumero(so.numero)} ${badge(so.stato)}</h2>
+      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(so.cliente_id))} &nbsp;
+         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(so.cantiere_id))} &nbsp;
+         <strong>Aperto il:</strong> ${fmtDate(so.data_apertura)}</p>
+      <p>
+        <strong>Scadenza prevista:</strong>
+        <input type="date" id="so-scadenza-edit" value="${so.data_scadenza||""}" style="display:inline-block;width:auto;">
+        ${so.data_scadenza && new Date(so.data_scadenza) < new Date(new Date().toDateString()) && so.stato!=="chiuso" && so.stato!=="annullato"? `<span class="badge danneggiato">Scaduto</span>` : ""}
+      </p>
+      ${so.note? `<p><em>${escapeHtml(so.note)}</em></p>` : ""}
+      <div class="actions">
+        ${so.stato!=="chiuso" && so.stato!=="annullato" ? `<button class="secondary" id="btn-chiudi-so">Chiudi Service Order</button>` : ""}
+        ${so.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-so">Riapri Service Order</button>` : ""}
+        ${so.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">Solo l'amministratore può riaprire un Service Order chiuso.</small>` : ""}
+        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-so">Elimina Service Order</button>` : ""}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Carrello - Prelievo materiale</h2>
+      ${pezziDisponibili.length===0? `<div class="empty">Nessun pezzo disponibile in magazzino.</div>` : `
+      <form id="form-prelievo">
+        <div class="form-grid">
+          <div><label>Pezzo (DTR) disponibile</label>
+            <div style="display:flex;gap:6px;">
+              <select required id="pr-pezzo" style="flex:1;">${optsDisponibili}</select>
+              <button type="button" class="secondary" id="btn-scan-prelievo">📷 Scansiona</button>
+            </div>
+          </div>
+        </div>
+        <button type="submit">Preleva</button>
+      </form>`}
+    </div>
+
+    <div class="card">
+      <h2>Restituzione materiale</h2>
+      ${pezziQui.length===0? `<div class="empty">Nessun pezzo attualmente presso questo cliente/cantiere.</div>` : `
+      <form id="form-reso">
+        <div class="form-grid">
+          <div><label>Pezzo (DTR) da restituire</label>
+            <div style="display:flex;gap:6px;">
+              <select required id="re-pezzo" style="flex:1;">${optsQui}</select>
+              <button type="button" class="secondary" id="btn-scan-reso">📷 Scansiona</button>
+            </div>
+          </div>
+          <div><label>Nuovo stato del pezzo</label>
+            <select id="re-stato">
+              <option value="disponibile">Disponibile</option>
+              <option value="in_revisione">In revisione</option>
+              <option value="da_riparare">Da riparare</option>
+              <option value="danneggiato">Danneggiato</option>
+              <option value="fuori_servizio">Fuori servizio</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit">Registra reso</button>
+      </form>`}
+    </div>
+
+    <div class="card">
+      <h2>Storico movimenti (${righe.length})</h2>
+      ${righe.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
+      <table><thead><tr><th>Data</th><th>Azione</th><th>Pezzo</th></tr></thead>
+      <tbody>
+        ${righe.map(r=>`<tr><td>${fmtDate(r.data)}</td><td>${r.azione==="prelievo"?"Prelievo":"Reso"}</td><td>${escapeHtml(pezzoLabel(r.pezzo_id))}</td></tr>`).join("")}
+      </tbody></table>`}
+    </div>
+
+    <div class="card">
+      <h2>Commenti e comunicazioni interne</h2>
+      <form id="form-commento-so">
+        <textarea id="cm-testo" placeholder="Scrivi una nota o un aggiornamento per gli altri colleghi su questo Service Order..." required></textarea>
+        <div style="margin-top:10px;"><button type="submit">Aggiungi commento</button></div>
+      </form>
+      <div id="lista-commenti-so" style="margin-top:14px;"></div>
+    </div>
+  `;
+}
+function renderCommentiSO(id){
+  const commenti = state.data.commentiSO.filter(c=>c.service_order_id===id);
+  const html = commenti.length===0? `<div class="empty">Nessun commento ancora.</div>` : commenti.map(c=>{
+    const autore = state.data.profiles.find(p=>p.id===c.creato_da);
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
+        <span>${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(c.created_at)}</span>
+        ${myRole()==="admin"? `<button class="secondary btn-elimina-commento-so" data-id="${c.id}" style="padding:2px 8px;font-size:11px;">Elimina</button>` : ""}
+      </div>
+      <div>${escapeHtml(c.testo)}</div>
+    </div>`;
+  }).join("");
+  const el = document.getElementById("lista-commenti-so");
+  if(!el) return;
+  el.innerHTML = html;
+  el.querySelectorAll(".btn-elimina-commento-so").forEach(b=>{
+    b.onclick = ()=>confirmDelete("commenti_service_order", b.dataset.id, "questo commento");
+  });
+}
+function wireServiceOrderDettaglio(id){
+  document.getElementById("btn-torna-so").onclick = ()=>{ state.soAperto=null; render(); };
+  const so = state.data.serviceOrders.find(s=>s.id===id);
+  renderCommentiSO(id);
+  const fCommento = document.getElementById("form-commento-so");
+  if(fCommento) fCommento.onsubmit = async (e)=>{
+    e.preventDefault();
+    const testo = document.getElementById("cm-testo").value.trim();
+    if(!testo) return;
+    const { error } = await sb.from("commenti_service_order").insert({ service_order_id: id, testo, creato_da: state.session.user.id });
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnChiudi = document.getElementById("btn-chiudi-so");
+  if(btnChiudi) btnChiudi.onclick = async ()=>{
+    const { error } = await sb.from("service_orders").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnRiapri = document.getElementById("btn-riapri-so");
+  if(btnRiapri) btnRiapri.onclick = async ()=>{
+    if(!confirm("Riaprire questo Service Order?")) return;
+    const { error } = await sb.from("service_orders").update({ stato:"aperto", data_chiusura: null }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnEliminaSo = document.getElementById("btn-elimina-so");
+  if(btnEliminaSo) btnEliminaSo.onclick = ()=>confirmDelete("service_orders", id, `il Service Order #${soNumero(so.numero)}`, ()=>{ state.soAperto=null; });
+  const inputScadenza = document.getElementById("so-scadenza-edit");
+  if(inputScadenza) inputScadenza.onchange = async ()=>{
+    const { error } = await sb.from("service_orders").update({ data_scadenza: inputScadenza.value || null }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  function scansionaESeleziona(selectId){
+    apriScannerQR((testo)=>{
+      const sel = document.getElementById(selectId);
+      if(!sel) return;
+      const opt = Array.from(sel.options).find(o=>o.textContent.toLowerCase().includes(testo.toLowerCase()));
+      if(opt) sel.value = opt.value;
+      else alert("Nessun pezzo trovato in elenco con il codice: "+testo);
+    });
+  }
+  const btnScanPrelievo = document.getElementById("btn-scan-prelievo");
+  if(btnScanPrelievo) btnScanPrelievo.onclick = ()=>scansionaESeleziona("pr-pezzo");
+  const btnScanReso = document.getElementById("btn-scan-reso");
+  if(btnScanReso) btnScanReso.onclick = ()=>scansionaESeleziona("re-pezzo");
+  const fPrelievo = document.getElementById("form-prelievo");
+  if(fPrelievo) fPrelievo.onsubmit = async (e)=>{
+    e.preventDefault();
+    const pezzoId = document.getElementById("pr-pezzo").value;
+    const { error: e1 } = await sb.from("pezzi").update({
+      stato:"in_uso", cliente_id: so.cliente_id, cantiere_id: so.cantiere_id, updated_at: new Date().toISOString()
+    }).eq("id", pezzoId);
+    if(e1){ alert("Errore: "+e1.message); return; }
+    const { error: e2 } = await sb.from("service_order_righe").insert({ service_order_id: id, pezzo_id: pezzoId, azione:"prelievo" });
+    if(e2){ alert("Errore: "+e2.message); return; }
+    render();
+  };
+  const fReso = document.getElementById("form-reso");
+  if(fReso) fReso.onsubmit = async (e)=>{
+    e.preventDefault();
+    const pezzoId = document.getElementById("re-pezzo").value;
+    const nuovoStato = document.getElementById("re-stato").value;
+    const { error: e1 } = await sb.from("pezzi").update({
+      stato: nuovoStato, cliente_id: null, cantiere_id: null, updated_at: new Date().toISOString()
+    }).eq("id", pezzoId);
+    if(e1){ alert("Errore: "+e1.message); return; }
+    const { error: e2 } = await sb.from("service_order_righe").insert({ service_order_id: id, pezzo_id: pezzoId, azione:"reso" });
+    if(e2){ alert("Errore: "+e2.message); return; }
+    render();
+  };
+}
+
+// ============================================================
+// LISTINO PREZZI
+// ============================================================
+function viewListino(){
+  const puoModificare = ["commerciale","admin"].includes(myRole());
+  const rows = state.data.articoli;
+  return `
+    <div class="card">
+      <h2>Listino prezzi</h2>
+      <p><small class="hint">Un prezzo per ogni articolo: vendita, noleggio (giorno/settimana/mese) e IVA.</small></p>
+      ${rows.length===0? `<div class="empty">Nessun articolo a catalogo. Creane uno nel Magazzino.</div>` : `
+      <table><thead><tr><th>Articolo</th><th>Vendita</th><th>Noleggio/giorno</th><th>Noleggio/settimana</th><th>Noleggio/mese</th><th>IVA %</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <tbody>
+        ${rows.map(a=>{
+          const l = prezzoArticolo(a.id) || {};
+          if(!puoModificare){
+            return `<tr>
+              <td>${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</td>
+              <td>${fmtMoney(l.prezzo_vendita)}</td>
+              <td>${fmtMoney(l.prezzo_noleggio_giornaliero)}</td>
+              <td>${fmtMoney(l.prezzo_noleggio_settimanale)}</td>
+              <td>${fmtMoney(l.prezzo_noleggio_mensile)}</td>
+              <td>${l.iva_percentuale!=null? l.iva_percentuale+"%" : "-"}</td>
+            </tr>`;
+          }
+          return `<tr data-articolo="${a.id}">
+            <td>${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</td>
+            <td><input type="number" step="0.01" class="lp-vendita" value="${l.prezzo_vendita??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-giorno" value="${l.prezzo_noleggio_giornaliero??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-settimana" value="${l.prezzo_noleggio_settimanale??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-mese" value="${l.prezzo_noleggio_mensile??""}" style="width:90px;"></td>
+            <td><input type="number" step="0.01" class="lp-iva" value="${l.iva_percentuale??22}" style="width:70px;"></td>
+            <td><button class="secondary btn-salva-prezzo" data-id="${a.id}">Salva</button></td>
+          </tr>`;
+        }).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireListino(){
+  document.querySelectorAll(".btn-salva-prezzo").forEach(btn=>{
+    btn.onclick = async ()=>{
+      const tr = btn.closest("tr");
+      const payload = {
+        articolo_id: btn.dataset.id,
+        prezzo_vendita: parseFloat(tr.querySelector(".lp-vendita").value) || null,
+        prezzo_noleggio_giornaliero: parseFloat(tr.querySelector(".lp-giorno").value) || null,
+        prezzo_noleggio_settimanale: parseFloat(tr.querySelector(".lp-settimana").value) || null,
+        prezzo_noleggio_mensile: parseFloat(tr.querySelector(".lp-mese").value) || null,
+        iva_percentuale: parseFloat(tr.querySelector(".lp-iva").value) || 0,
+        updated_at: new Date().toISOString(),
+      };
+      const originalLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Salvataggio...";
+      const { data, error } = await sb.from("listino_prezzi").upsert(payload, { onConflict: "articolo_id" }).select();
+      if(error){
+        alert("Errore nel salvataggio: "+error.message+"\n\n(Codice: "+(error.code||"n/d")+")");
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+        return;
+      }
+      if(data && data[0]){
+        const idx = state.data.listino.findIndex(l=>l.articolo_id===payload.articolo_id);
+        if(idx>=0) state.data.listino[idx] = data[0]; else state.data.listino.push(data[0]);
+      }
+      btn.textContent = "✓ Salvato";
+      setTimeout(()=>{ btn.disabled=false; btn.textContent = originalLabel; }, 1500);
+    };
+  });
+}
+
+// ============================================================
+// PREVENTIVI
+// ============================================================
+function viewPreventivi(){
+  if(state.preventivoAperto) return viewPreventivoDettaglio(state.preventivoAperto);
+  const rows = state.data.preventivi;
+  const puoModificare = ["commerciale","admin"].includes(myRole());
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    ${!puoModificare? "" : `
+    <div class="card">
+      <h2>Nuovo preventivo</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-preventivo">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="pv-cliente">${clientiOpts}</select></div>
+          <div><label>Cantiere</label><select id="pv-cantiere"><option value="">-- nessuno --</option></select></div>
+          <div><label>Sconto complessivo %</label><input type="number" step="0.01" id="pv-sconto" value="0"></div>
+        </div>
+        <label>Note</label><textarea id="pv-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Crea preventivo</button></div>
+      </form>`}
+    </div>`}
+    <div class="card">
+      <h2>Elenco preventivi (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun preventivo creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Totale</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(p=>`
+          <tr>
+            <td>#${p.numero}</td>
+            <td>${escapeHtml(clienteNome(p.cliente_id))}</td>
+            <td>${escapeHtml(cantiereNome(p.cantiere_id))}</td>
+            <td><span class="badge ${statoPreventivoLabelClass(p.stato)}">${statoPreventivoLabel(p.stato)}</span></td>
+            <td>${fmtMoney(totalePreventivo(p.id))}</td>
+            <td><button class="secondary btn-apri-pv" data-id="${p.id}">Apri</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wirePreventivi(){
+  if(state.preventivoAperto){ wirePreventivoDettaglio(state.preventivoAperto); return; }
+  const selCliente = document.getElementById("pv-cliente");
+  const selCantiere = document.getElementById("pv-cantiere");
+  function aggiornaCantieri(){
+    if(!selCliente) return;
+    const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
+      .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
+    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+  }
+  if(selCliente){ aggiornaCantieri(); selCliente.onchange = aggiornaCantieri; }
+  const f = document.getElementById("form-preventivo");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: selCliente.value,
+      cantiere_id: selCantiere.value || null,
+      sconto_percentuale: parseFloat(document.getElementById("pv-sconto").value) || 0,
+      note: document.getElementById("pv-note").value.trim() || null,
+      stato: "bozza",
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("preventivi").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-apri-pv").forEach(b=>{
+    b.onclick = ()=>{ state.preventivoAperto = b.dataset.id; render(); };
+  });
+}
+
+function stampaPreventivo(id){
+  const pv = state.data.preventivi.find(p=>p.id===id);
+  if(!pv) return;
+  const righe = state.data.preventivoRighe.filter(r=>r.preventivo_id===id);
+  const cliente = state.data.clienti.find(c=>c.id===pv.cliente_id) || {};
+  const righeHtml = righe.map(r=>`
+    <tr>
+      <td>${escapeHtml(articoloLabel(r.articolo_id))}</td>
+      <td>${tipoPrezzoLabel(r.tipo_prezzo)}</td>
+      <td style="text-align:right;">${r.quantita}</td>
+      <td style="text-align:right;">${fmtMoney(r.prezzo_unitario)}</td>
+      <td style="text-align:right;">${r.sconto_percentuale||0}%</td>
+      <td style="text-align:right;">${fmtMoney(totaleRiga(r))}</td>
+    </tr>`).join("");
+  const html = `<!DOCTYPE html>
+<html lang="it"><head><meta charset="UTF-8"><title>Preventivo #${pv.numero}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#1c2530;margin:40px;}
+  h1{font-size:22px;margin-bottom:0;}
+  .sub{color:#66707d;margin-top:4px;margin-bottom:28px;}
+  table{width:100%;border-collapse:collapse;margin-top:16px;}
+  th,td{padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px;text-align:left;}
+  th{background:#f4f6f9;}
+  .tot{font-size:16px;font-weight:bold;text-align:right;margin-top:14px;}
+  .info{display:flex;justify-content:space-between;margin-bottom:10px;}
+  .box{border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:20px;}
+  @media print{ button{display:none;} }
+</style></head>
+<body>
+  <h1>Preventivo #${pv.numero}</h1>
+  <p class="sub">Data: ${fmtDate(pv.data_creazione)} — Stato: ${statoPreventivoLabel(pv.stato)}</p>
+  <div class="box">
+    <strong>Cliente:</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
+    ${cliente.referente? `Referente: ${escapeHtml(cliente.referente)}<br>` : ""}
+    ${cliente.indirizzo? `Indirizzo: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
+    ${cliente.piva? `P.IVA: ${escapeHtml(cliente.piva)}<br>` : ""}
+    ${pv.cantiere_id? `Cantiere: ${escapeHtml(cantiereNome(pv.cantiere_id))}<br>` : ""}
+  </div>
+  ${pv.note? `<p><em>${escapeHtml(pv.note)}</em></p>` : ""}
+  <table>
+    <thead><tr><th>Articolo</th><th>Tipo</th><th style="text-align:right;">Quantità</th><th style="text-align:right;">Prezzo unit.</th><th style="text-align:right;">Sconto</th><th style="text-align:right;">Totale</th></tr></thead>
+    <tbody>${righeHtml}</tbody>
+  </table>
+  ${pv.sconto_percentuale? `<p style="text-align:right;margin-top:10px;">Sconto complessivo: ${pv.sconto_percentuale}%</p>` : ""}
+  <p class="tot">Totale: ${fmtMoney(totalePreventivo(id))}</p>
+  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">Stampa questa pagina</button>
+</body></html>`;
+  const w = window.open("", "_blank");
+  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+function viewPreventivoDettaglio(id){
+  const pv = state.data.preventivi.find(p=>p.id===id);
+  if(!pv){ state.preventivoAperto=null; return viewPreventivi(); }
+  const puoModificare = ["commerciale","admin"].includes(myRole());
+  const righe = state.data.preventivoRighe.filter(r=>r.preventivo_id===id);
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  const soCollegato = state.data.serviceOrders.find(s=>s.preventivo_id===id);
+  return `
+    <div class="actions" style="margin-bottom:0;">
+      <button class="secondary" id="btn-torna-pv">&larr; Torna all'elenco</button>
+      <button class="secondary" id="btn-stampa-pv">🖨️ Stampa / PDF</button>
+      ${myRole()==="admin"? `<button class="danger" id="btn-elimina-pv">Elimina preventivo</button>` : ""}
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <h2>Preventivo #${pv.numero} <span class="badge ${statoPreventivoLabelClass(pv.stato)}">${statoPreventivoLabel(pv.stato)}</span></h2>
+      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(pv.cliente_id))} &nbsp;
+         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(pv.cantiere_id))} &nbsp;
+         <strong>Sconto complessivo:</strong> ${pv.sconto_percentuale||0}%</p>
+      ${pv.note? `<p><em>${escapeHtml(pv.note)}</em></p>` : ""}
+      ${puoModificare? `
+      <div class="actions">
+        ${pv.stato==="bozza"? `<button class="secondary btn-stato-pv" data-stato="inviato">Segna come inviato</button>` : ""}
+        ${pv.stato==="inviato"? `<button class="secondary btn-stato-pv" data-stato="accettato">Segna come accettato</button><button class="secondary btn-stato-pv" data-stato="rifiutato">Segna come rifiutato</button>` : ""}
+        ${pv.stato==="accettato" && !soCollegato? `<button id="btn-crea-so-da-pv">Crea Service Order da questo preventivo</button>` : ""}
+        ${soCollegato? `<span class="hint">Service Order collegato: #${soNumero(soCollegato.numero)}</span>` : ""}
+      </div>` : ""}
+    </div>
+    <div class="card">
+      <h2>Righe (${righe.length}) — Totale: ${fmtMoney(totalePreventivo(id))}</h2>
+      ${righe.length===0? `<div class="empty">Nessuna riga aggiunta.</div>` : `
+      <table><thead><tr><th>Articolo</th><th>Tipo</th><th>Quantità</th><th>Prezzo unit.</th><th>Sconto %</th><th>Totale riga</th>${puoModificare?"<th></th>":""}</tr></thead>
+      <tbody>
+        ${righe.map(r=>`
+          <tr>
+            <td>${escapeHtml(articoloLabel(r.articolo_id))}</td>
+            <td>${tipoPrezzoLabel(r.tipo_prezzo)}</td>
+            <td>${r.quantita}</td>
+            <td>${fmtMoney(r.prezzo_unitario)}</td>
+            <td>${r.sconto_percentuale||0}%</td>
+            <td>${fmtMoney(totaleRiga(r))}</td>
+            ${puoModificare? `<td><button class="secondary btn-rimuovi-riga" data-id="${r.id}">Rimuovi</button></td>` : ""}
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+      ${puoModificare? `
+      <h3 style="margin-top:18px;">Aggiungi riga</h3>
+      <form id="form-riga-pv">
+        <div class="form-grid">
+          <div><label>Articolo *</label><select required id="rp-articolo">${articoliOpts}</select></div>
+          <div><label>Tipo prezzo</label>
+            <select id="rp-tipo">
+              <option value="vendita">Vendita</option>
+              <option value="noleggio_giornaliero">Noleggio giorno</option>
+              <option value="noleggio_settimanale">Noleggio settimana</option>
+              <option value="noleggio_mensile">Noleggio mese</option>
+            </select>
+          </div>
+          <div><label>Quantità</label><input type="number" step="0.01" id="rp-quantita" value="1"></div>
+          <div><label>Prezzo unitario</label><input type="number" step="0.01" id="rp-prezzo" required></div>
+          <div><label>Sconto %</label><input type="number" step="0.01" id="rp-sconto" value="0"></div>
+        </div>
+        <button type="submit">Aggiungi riga</button>
+      </form>` : ""}
+    </div>
+  `;
+}
+function wirePreventivoDettaglio(id){
+  document.getElementById("btn-torna-pv").onclick = ()=>{ state.preventivoAperto=null; render(); };
+  document.getElementById("btn-stampa-pv").onclick = ()=>{ stampaPreventivo(id); };
+  const btnEliminaPv = document.getElementById("btn-elimina-pv");
+  if(btnEliminaPv){
+    const pv = state.data.preventivi.find(p=>p.id===id);
+    btnEliminaPv.onclick = ()=>confirmDelete("preventivi", id, `il preventivo #${pv? pv.numero : ""}`, ()=>{ state.preventivoAperto=null; });
+  }
+  document.querySelectorAll(".btn-stato-pv").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("preventivi").update({ stato: b.dataset.stato }).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+  const btnCreaSO = document.getElementById("btn-crea-so-da-pv");
+  if(btnCreaSO) btnCreaSO.onclick = async ()=>{
+    const pv = state.data.preventivi.find(p=>p.id===id);
+    const { error } = await sb.from("service_orders").insert({
+      cliente_id: pv.cliente_id, cantiere_id: pv.cantiere_id, preventivo_id: pv.id,
+      stato: "aperto", created_by: state.session.user.id,
+    });
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const rpArticolo = document.getElementById("rp-articolo");
+  const rpTipo = document.getElementById("rp-tipo");
+  const rpPrezzo = document.getElementById("rp-prezzo");
+  function autoPrezzo(){
+    if(!rpArticolo) return;
+    const l = prezzoArticolo(rpArticolo.value);
+    if(!l) return;
+    const map = { vendita:"prezzo_vendita", noleggio_giornaliero:"prezzo_noleggio_giornaliero", noleggio_settimanale:"prezzo_noleggio_settimanale", noleggio_mensile:"prezzo_noleggio_mensile" };
+    const v = l[map[rpTipo.value]];
+    if(v!=null) rpPrezzo.value = v;
+  }
+  if(rpArticolo){ autoPrezzo(); rpArticolo.onchange = autoPrezzo; rpTipo.onchange = autoPrezzo; }
+  const fRiga = document.getElementById("form-riga-pv");
+  if(fRiga) fRiga.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      preventivo_id: id,
+      articolo_id: rpArticolo.value,
+      tipo_prezzo: rpTipo.value,
+      quantita: parseFloat(document.getElementById("rp-quantita").value) || 1,
+      prezzo_unitario: parseFloat(rpPrezzo.value) || 0,
+      sconto_percentuale: parseFloat(document.getElementById("rp-sconto").value) || 0,
+    };
+    const { error } = await sb.from("preventivo_righe").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-rimuovi-riga").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("preventivo_righe").delete().eq("id", b.dataset.id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+}
+
+// ============================================================
+// FORNITORI
+// ============================================================
+function viewFornitori(){
+  const rows = state.data.fornitori;
+  return `
+    <div class="card">
+      <h2>Nuovo fornitore</h2>
+      <form id="form-fornitore">
+        <div class="form-grid">
+          <div><label>Ragione sociale *</label><input required id="f-ragione"></div>
+          <div><label>Referente</label><input id="f-referente"></div>
+          <div><label>Telefono</label><input id="f-telefono"></div>
+          <div><label>Email</label><input type="email" id="f-email"></div>
+          <div><label>Indirizzo</label><input id="f-indirizzo"></div>
+          <div><label>Partita IVA</label><input id="f-piva"></div>
+        </div>
+        <label>Note</label><textarea id="f-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva fornitore</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Elenco fornitori (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun fornitore inserito.</div>` : `
+      <table><thead><tr><th>Ragione sociale</th><th>Referente</th><th>Telefono</th><th>Email</th><th>P.IVA</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(f=>`
+          <tr>
+            <td>${escapeHtml(f.ragione_sociale)}</td>
+            <td>${escapeHtml(f.referente||"-")}</td>
+            <td>${escapeHtml(f.telefono||"-")}</td>
+            <td>${escapeHtml(f.email||"-")}</td>
+            <td>${escapeHtml(f.piva||"-")}</td>
+            <td><button class="secondary btn-edit-fornitore" data-id="${f.id}">Modifica</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireFornitori(){
+  const f = document.getElementById("form-fornitore");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      ragione_sociale: document.getElementById("f-ragione").value.trim(),
+      referente: document.getElementById("f-referente").value.trim() || null,
+      telefono: document.getElementById("f-telefono").value.trim() || null,
+      email: document.getElementById("f-email").value.trim() || null,
+      indirizzo: document.getElementById("f-indirizzo").value.trim() || null,
+      piva: document.getElementById("f-piva").value.trim() || null,
+      note: document.getElementById("f-note").value.trim() || null,
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("fornitori").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-edit-fornitore").forEach(b=>{ b.onclick = ()=>editFornitore(b.dataset.id); });
+}
+function editFornitore(id){
+  const f = state.data.fornitori.find(x=>x.id===id);
+  if(!f) return;
+  const body = `
+    <form id="form-edit-fornitore">
+      <div class="form-grid">
+        <div><label>Ragione sociale *</label><input required id="ef-ragione" value="${escapeHtml(f.ragione_sociale)}"></div>
+        <div><label>Referente</label><input id="ef-referente" value="${escapeHtml(f.referente||"")}"></div>
+        <div><label>Telefono</label><input id="ef-telefono" value="${escapeHtml(f.telefono||"")}"></div>
+        <div><label>Email</label><input type="email" id="ef-email" value="${escapeHtml(f.email||"")}"></div>
+        <div><label>Indirizzo</label><input id="ef-indirizzo" value="${escapeHtml(f.indirizzo||"")}"></div>
+        <div><label>Partita IVA</label><input id="ef-piva" value="${escapeHtml(f.piva||"")}"></div>
+      </div>
+      <label>Note</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina fornitore</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica fornitore", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("fornitori", id, `il fornitore "${f.ragione_sociale}"`);
+    bodyEl.querySelector("#form-edit-fornitore").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        ragione_sociale: bodyEl.querySelector("#ef-ragione").value.trim(),
+        referente: bodyEl.querySelector("#ef-referente").value.trim() || null,
+        telefono: bodyEl.querySelector("#ef-telefono").value.trim() || null,
+        email: bodyEl.querySelector("#ef-email").value.trim() || null,
+        indirizzo: bodyEl.querySelector("#ef-indirizzo").value.trim() || null,
+        piva: bodyEl.querySelector("#ef-piva").value.trim() || null,
+        note: bodyEl.querySelector("#ef-note").value.trim() || null,
+      };
+      const { error } = await sb.from("fornitori").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
+// FATTURE
+// ============================================================
+function viewFatture(){
+  const rows = state.data.fatture;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  const fornitoriOpts = state.data.fornitori.map(f=>`<option value="${f.id}">${escapeHtml(f.ragione_sociale)}</option>`).join("");
+  const soOpts = state.data.serviceOrders.map(s=>`<option value="${s.id}">#${soNumero(s.numero)} - ${escapeHtml(clienteNome(s.cliente_id))}</option>`).join("");
+  const totIncassare = rows.filter(f=>f.tipo==="emessa" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  const totScadute = rows.filter(f=>f.tipo==="emessa" && isScaduta(f)).reduce((s,f)=>s+Number(f.importo_totale),0);
+  const totDaPagare = rows.filter(f=>f.tipo==="ricevuta" && f.stato!=="pagata").reduce((s,f)=>s+Number(f.importo_totale),0);
+  return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(totIncassare)}</div><div class="lbl">Da incassare (clienti)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totScadute)}</div><div class="lbl">Scadute (clienti)</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(totDaPagare)}</div><div class="lbl">Da pagare (fornitori)</div></div>
+    </div>
+    <div class="card">
+      <h2>Nuova fattura</h2>
+      <form id="form-fattura">
+        <div class="form-grid">
+          <div><label>Tipo *</label>
+            <select required id="ft-tipo">
+              <option value="emessa">Emessa (a un cliente)</option>
+              <option value="ricevuta">Ricevuta (da un fornitore)</option>
+            </select>
+          </div>
+          <div id="ft-cliente-wrap"><label>Cliente *</label><select id="ft-cliente">${clientiOpts}</select></div>
+          <div id="ft-fornitore-wrap" style="display:none;"><label>Fornitore *</label><select id="ft-fornitore">${fornitoriOpts}</select></div>
+          <div><label>Service Order collegato</label><select id="ft-so"><option value="">-- nessuno --</option>${soOpts}</select></div>
+          <div><label>Data emissione</label><input type="date" id="ft-emissione" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div><label>Data scadenza</label><input type="date" id="ft-scadenza"></div>
+          <div><label>Imponibile (€) *</label><input type="number" step="0.01" required id="ft-imponibile"></div>
+          <div><label>IVA %</label><input type="number" step="0.01" id="ft-iva" value="22"></div>
+        </div>
+        <label>Note</label><textarea id="ft-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Salva fattura</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Elenco fatture (${rows.length})</h2>
+      ${exportButtonsHtml("exp-fatture")}
+      ${rows.length===0? `<div class="empty">Nessuna fattura inserita.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Tipo</th><th>Cliente/Fornitore</th><th>Emissione</th><th>Scadenza</th><th>Totale</th><th>Stato</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(f=>{
+          const stEff = statoFatturaEffettivo(f);
+          return `<tr>
+            <td>#${f.numero}</td>
+            <td>${f.tipo==="emessa"?"Emessa":"Ricevuta"}</td>
+            <td>${f.tipo==="emessa"? escapeHtml(clienteNome(f.cliente_id)) : escapeHtml(fornitoreNome(f.fornitore_id))}</td>
+            <td>${fmtDateOnly(f.data_emissione)}</td>
+            <td>${fmtDateOnly(f.data_scadenza)}</td>
+            <td>${fmtMoney(f.importo_totale)}</td>
+            <td><span class="badge ${statoFatturaClass(stEff)}">${statoFatturaLabel(stEff)}</span></td>
+            <td>
+              ${f.stato!=="pagata"? `<button class="secondary btn-segna-pagata" data-id="${f.id}">Segna pagata</button>` : ""}
+              ${f.stato==="non_pagata"? `<button class="secondary btn-segna-insoluto" data-id="${f.id}">Insoluto</button>` : ""}
+              <button class="secondary btn-edit-fattura" data-id="${f.id}">Modifica</button>
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function editFattura(id){
+  const f = state.data.fatture.find(x=>x.id===id);
+  if(!f) return;
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}" ${c.id===f.cliente_id?"selected":""}>${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  const fornitoriOpts = state.data.fornitori.map(x=>`<option value="${x.id}" ${x.id===f.fornitore_id?"selected":""}>${escapeHtml(x.ragione_sociale)}</option>`).join("");
+  const body = `
+    <form id="form-edit-fattura">
+      <div class="form-grid">
+        <div><label>Cliente/Fornitore</label>
+          ${f.tipo==="emessa"? `<select id="ef-cliente">${clientiOpts}</select>` : `<select id="ef-fornitore">${fornitoriOpts}</select>`}
+        </div>
+        <div><label>Data emissione</label><input type="date" id="ef-emissione" value="${f.data_emissione||""}"></div>
+        <div><label>Data scadenza</label><input type="date" id="ef-scadenza" value="${f.data_scadenza||""}"></div>
+        <div><label>Imponibile (€) *</label><input type="number" step="0.01" required id="ef-imponibile" value="${f.importo_imponibile}"></div>
+        <div><label>IVA %</label><input type="number" step="0.01" id="ef-iva" value="${f.iva_percentuale}"></div>
+      </div>
+      <label>Note</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina fattura</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal(`Modifica fattura #${f.numero}`, body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("fatture", id, `la fattura #${f.numero}`);
+    bodyEl.querySelector("#form-edit-fattura").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        data_emissione: bodyEl.querySelector("#ef-emissione").value || f.data_emissione,
+        data_scadenza: bodyEl.querySelector("#ef-scadenza").value || null,
+        importo_imponibile: parseFloat(bodyEl.querySelector("#ef-imponibile").value) || 0,
+        iva_percentuale: parseFloat(bodyEl.querySelector("#ef-iva").value) || 0,
+        note: bodyEl.querySelector("#ef-note").value.trim() || null,
+      };
+      if(f.tipo==="emessa") payload.cliente_id = bodyEl.querySelector("#ef-cliente").value;
+      else payload.fornitore_id = bodyEl.querySelector("#ef-fornitore").value;
+      const { error } = await sb.from("fatture").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+function wireFatture(){
+  const selTipo = document.getElementById("ft-tipo");
+  const wrapCliente = document.getElementById("ft-cliente-wrap");
+  const wrapFornitore = document.getElementById("ft-fornitore-wrap");
+  function aggiornaTipo(){
+    const isEmessa = selTipo.value === "emessa";
+    wrapCliente.style.display = isEmessa? "" : "none";
+    wrapFornitore.style.display = isEmessa? "none" : "";
+  }
+  if(selTipo){ aggiornaTipo(); selTipo.onchange = aggiornaTipo; }
+  const f = document.getElementById("form-fattura");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const isEmessa = selTipo.value === "emessa";
+    const payload = {
+      tipo: selTipo.value,
+      cliente_id: isEmessa? document.getElementById("ft-cliente").value : null,
+      fornitore_id: !isEmessa? document.getElementById("ft-fornitore").value : null,
+      service_order_id: document.getElementById("ft-so").value || null,
+      data_emissione: document.getElementById("ft-emissione").value || new Date().toISOString().slice(0,10),
+      data_scadenza: document.getElementById("ft-scadenza").value || null,
+      importo_imponibile: parseFloat(document.getElementById("ft-imponibile").value) || 0,
+      iva_percentuale: parseFloat(document.getElementById("ft-iva").value) || 0,
+      note: document.getElementById("ft-note").value.trim() || null,
+      stato: "non_pagata",
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("fatture").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-segna-pagata").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("fatture").update({ stato:"pagata" }).eq("id", b.dataset.id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+  document.querySelectorAll(".btn-segna-insoluto").forEach(b=>{
+    b.onclick = async ()=>{
+      const { error } = await sb.from("fatture").update({ stato:"insoluto" }).eq("id", b.dataset.id);
+      if(error){ alert("Errore: "+error.message); return; }
+      render();
+    };
+  });
+  document.querySelectorAll(".btn-edit-fattura").forEach(b=>{ b.onclick = ()=>editFattura(b.dataset.id); });
+  wireExportButtons("exp-fatture", "fatture", "Fatture",
+    ["Numero","Tipo","Cliente/Fornitore","Emissione","Scadenza","Totale","Stato"],
+    ()=>state.data.fatture.map(f=>[f.numero, f.tipo==="emessa"?"Emessa":"Ricevuta", f.tipo==="emessa"?clienteNome(f.cliente_id):fornitoreNome(f.fornitore_id), fmtDateOnly(f.data_emissione), fmtDateOnly(f.data_scadenza), Number(f.importo_totale).toFixed(2), statoFatturaLabel(statoFatturaEffettivo(f))])
+  );
+}
+
+// ============================================================
+// CASSA / BANCA
+// ============================================================
+function viewCassa(){
+  const rows = state.data.movimenti;
+  const entrate = rows.filter(m=>m.tipo==="entrata").reduce((s,m)=>s+Number(m.importo),0);
+  const uscite = rows.filter(m=>m.tipo==="uscita").reduce((s,m)=>s+Number(m.importo),0);
+  const saldo = entrate - uscite;
+  return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(entrate)}</div><div class="lbl">Totale entrate</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(uscite)}</div><div class="lbl">Totale uscite</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(saldo)}</div><div class="lbl">Saldo</div></div>
+    </div>
+    <div class="card">
+      <h2>Nuovo movimento</h2>
+      <form id="form-movimento">
+        <div class="form-grid">
+          <div><label>Tipo *</label><select required id="mv-tipo"><option value="entrata">Entrata</option><option value="uscita">Uscita</option></select></div>
+          <div><label>Metodo</label><select id="mv-metodo"><option value="banca">Banca</option><option value="cassa">Cassa</option></select></div>
+          <div><label>Importo (€) *</label><input type="number" step="0.01" required id="mv-importo"></div>
+          <div><label>Data</label><input type="date" id="mv-data" value="${new Date().toISOString().slice(0,10)}"></div>
+        </div>
+        <label>Descrizione</label><textarea id="mv-descrizione"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Registra movimento</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Movimenti (${rows.length})</h2>
+      ${exportButtonsHtml("exp-cassa")}
+      ${rows.length===0? `<div class="empty">Nessun movimento registrato.</div>` : `
+      <table><thead><tr><th>Data</th><th>Tipo</th><th>Metodo</th><th>Importo</th><th>Descrizione</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(m=>`
+          <tr>
+            <td>${fmtDateOnly(m.data)}</td>
+            <td><span class="badge ${m.tipo==='entrata'?'disponibile':'danneggiato'}">${m.tipo==='entrata'?'Entrata':'Uscita'}</span></td>
+            <td>${m.metodo==='banca'?'Banca':'Cassa'}</td>
+            <td>${fmtMoney(m.importo)}</td>
+            <td>${escapeHtml(m.descrizione||"-")}</td>
+            <td><button class="secondary btn-edit-movimento" data-id="${m.id}">Modifica</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireCassa(){
+  const f = document.getElementById("form-movimento");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      tipo: document.getElementById("mv-tipo").value,
+      metodo: document.getElementById("mv-metodo").value,
+      importo: parseFloat(document.getElementById("mv-importo").value) || 0,
+      data: document.getElementById("mv-data").value || new Date().toISOString().slice(0,10),
+      descrizione: document.getElementById("mv-descrizione").value.trim() || null,
+      created_by: state.session.user.id,
+    };
+    const { error } = await sb.from("movimenti_cassa").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-edit-movimento").forEach(b=>{ b.onclick = ()=>editMovimento(b.dataset.id); });
+  wireExportButtons("exp-cassa", "movimenti_cassa", "Movimenti di cassa",
+    ["Data","Tipo","Metodo","Importo","Descrizione"],
+    ()=>state.data.movimenti.map(m=>[fmtDateOnly(m.data), m.tipo==='entrata'?'Entrata':'Uscita', m.metodo==='banca'?'Banca':'Cassa', Number(m.importo).toFixed(2), m.descrizione||""])
+  );
+}
+function editMovimento(id){
+  const m = state.data.movimenti.find(x=>x.id===id);
+  if(!m) return;
+  const body = `
+    <form id="form-edit-movimento">
+      <div class="form-grid">
+        <div><label>Tipo *</label><select required id="em-tipo"><option value="entrata" ${m.tipo==="entrata"?"selected":""}>Entrata</option><option value="uscita" ${m.tipo==="uscita"?"selected":""}>Uscita</option></select></div>
+        <div><label>Metodo</label><select id="em-metodo"><option value="banca" ${m.metodo==="banca"?"selected":""}>Banca</option><option value="cassa" ${m.metodo==="cassa"?"selected":""}>Cassa</option></select></div>
+        <div><label>Importo (€) *</label><input type="number" step="0.01" required id="em-importo" value="${m.importo}"></div>
+        <div><label>Data</label><input type="date" id="em-data" value="${m.data||""}"></div>
+      </div>
+      <label>Descrizione</label><textarea id="em-descrizione">${escapeHtml(m.descrizione||"")}</textarea>
+      <div class="actions" style="margin-top:14px;">
+        <button type="submit">Salva modifiche</button>
+        <button type="button" class="secondary" id="btn-annulla-edit">Annulla</button>
+        ${myRole()==="admin"? `<button type="button" class="danger" id="btn-elimina-edit">Elimina movimento</button>` : ""}
+      </div>
+    </form>
+  `;
+  openModal("Modifica movimento", body, (bodyEl)=>{
+    bodyEl.querySelector("#btn-annulla-edit").onclick = closeModal;
+    const btnDel = bodyEl.querySelector("#btn-elimina-edit");
+    if(btnDel) btnDel.onclick = ()=>confirmDelete("movimenti_cassa", id, "questo movimento");
+    bodyEl.querySelector("#form-edit-movimento").onsubmit = async (e)=>{
+      e.preventDefault();
+      const payload = {
+        tipo: bodyEl.querySelector("#em-tipo").value,
+        metodo: bodyEl.querySelector("#em-metodo").value,
+        importo: parseFloat(bodyEl.querySelector("#em-importo").value) || 0,
+        data: bodyEl.querySelector("#em-data").value || m.data,
+        descrizione: bodyEl.querySelector("#em-descrizione").value.trim() || null,
+      };
+      const { error } = await sb.from("movimenti_cassa").update(payload).eq("id", id);
+      if(error){ alert("Errore: "+error.message); return; }
+      closeModal();
+      render();
+    };
+  });
+}
+
+// ============================================================
+// MESSAGGI INTERNI (bacheca tra Magazzino/Commerciale/Contabilità/Admin)
+// ============================================================
+function viewMessaggi(){
+  const rows = state.data.messaggiInterni;
+  return `
+    <div class="card">
+      <h2>Nuovo messaggio</h2>
+      <form id="form-messaggio">
+        <textarea id="msg-testo" placeholder="Scrivi un messaggio per gli altri colleghi..." required></textarea>
+        <div style="margin-top:10px;"><button type="submit">Invia</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Bacheca (${rows.length})</h2>
+      ${rows.length===0? `<div class="empty">Nessun messaggio ancora.</div>` : rows.map(m=>{
+        const autore = state.data.profiles.find(p=>p.id===m.creato_da);
+        return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;">
+            <span>${escapeHtml(autore? autore.full_name : "Utente")} — ${fmtDate(m.created_at)}</span>
+            ${myRole()==="admin"? `<button class="secondary btn-elimina-messaggio" data-id="${m.id}" style="padding:2px 8px;font-size:11px;">Elimina</button>` : ""}
+          </div>
+          <div>${escapeHtml(m.testo)}</div>
+        </div>`;
+      }).join("")}
+    </div>
+  `;
+}
+function wireMessaggi(){
+  const f = document.getElementById("form-messaggio");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const testo = document.getElementById("msg-testo").value.trim();
+    if(!testo) return;
+    const { error } = await sb.from("messaggi_interni").insert({ testo, creato_da: state.session.user.id });
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-elimina-messaggio").forEach(b=>{
+    b.onclick = ()=>confirmDelete("messaggi_interni", b.dataset.id, "questo messaggio");
+  });
+}
+
+// ============================================================
+// INVENTARIO RAPIDO DA SMARTPHONE (scansione in sequenza)
+// ============================================================
+function viewInventarioRapido(){
+  return `
+    <div class="card">
+      <h2>📱 Inventario rapido</h2>
+      <p><small class="hint">Pensato per fare il giro del magazzino con il telefono: scansiona il QR/DTR di un pezzo per vederne subito i dati, confermarne la presenza o aggiornarne stato e posizione, senza cercarlo nell'elenco. Dopo ogni pezzo puoi scansionare subito il successivo.</small></p>
+      <button id="btn-inv-scansiona">📷 Scansiona pezzo</button>
+    </div>
+    <div id="inv-risultato"></div>
+  `;
+}
+function wireInventarioRapido(){
+  const btn = document.getElementById("btn-inv-scansiona");
+  if(btn) btn.onclick = ()=>{
+    apriScannerQR((testo)=>{
+      const p = state.data.pezzi.find(x=>x.dtr && x.dtr.toLowerCase()===testo.toLowerCase());
+      renderInventarioRisultato(p, testo);
+    });
+  };
+}
+function renderInventarioRisultato(p, testoScansionato){
+  const el = document.getElementById("inv-risultato");
+  if(!el) return;
+  if(!p){
+    el.innerHTML = `<div class="card"><div class="msg error">Nessun pezzo trovato con il codice "${escapeHtml(testoScansionato)}".</div></div>`;
+    return;
+  }
+  const stati = ["disponibile","in_uso","in_revisione","da_riparare","danneggiato","fuori_servizio"];
+  el.innerHTML = `
+    <div class="card">
+      <h2>${escapeHtml(p.dtr)} ${badge(p.stato)}</h2>
+      <p><strong>Articolo:</strong> ${escapeHtml(articoloLabel(p.articolo_id))}<br>
+         ${p.cliente_id? `<strong>Presso:</strong> ${escapeHtml(clienteNome(p.cliente_id))}${p.cantiere_id? " / "+escapeHtml(cantiereNome(p.cantiere_id)) : ""}<br>` : ""}
+         <strong>Ultima verifica inventario:</strong> ${p.ultima_verifica_inventario? fmtDate(p.ultima_verifica_inventario) : "mai"}</p>
+      <div class="form-grid">
+        <div><label>Aggiorna stato</label><select id="inv-stato">${stati.map(s=>`<option value="${s}" ${s===p.stato?"selected":""}>${statoLabel(s)}</option>`).join("")}</select></div>
+        <div><label>Posizione</label><input id="inv-posizione" value="${escapeHtml(p.posizione||"")}"></div>
+      </div>
+      <div class="actions" style="margin-top:10px;">
+        <button id="btn-inv-conferma">✔️ Conferma presente</button>
+        <button class="secondary" id="btn-inv-salva">Salva modifiche</button>
+        <button class="secondary" id="btn-inv-prossimo">📷 Scansiona il prossimo</button>
+      </div>
+      <div id="inv-msg"></div>
+    </div>
+  `;
+  document.getElementById("btn-inv-conferma").onclick = async ()=>{
+    const msg = document.getElementById("inv-msg");
+    const { error } = await sb.from("pezzi").update({ ultima_verifica_inventario: new Date().toISOString() }).eq("id", p.id);
+    if(error){ msg.innerHTML = `<div class="msg error">Errore: ${escapeHtml(error.message)}</div>`; return; }
+    await loadAll();
+    msg.innerHTML = `<div class="msg ok">Presenza confermata.</div>`;
+  };
+  document.getElementById("btn-inv-salva").onclick = async ()=>{
+    const msg = document.getElementById("inv-msg");
+    const payload = {
+      stato: document.getElementById("inv-stato").value,
+      posizione: document.getElementById("inv-posizione").value.trim() || null,
+      ultima_verifica_inventario: new Date().toISOString(),
+    };
+    const { error } = await sb.from("pezzi").update(payload).eq("id", p.id);
+    if(error){ msg.innerHTML = `<div class="msg error">Errore: ${escapeHtml(error.message)}</div>`; return; }
+    await loadAll();
+    msg.innerHTML = `<div class="msg ok">Modifiche salvate.</div>`;
+  };
+  document.getElementById("btn-inv-prossimo").onclick = ()=>{
+    apriScannerQR((testo)=>{
+      const pNext = state.data.pezzi.find(x=>x.dtr && x.dtr.toLowerCase()===testo.toLowerCase());
+      renderInventarioRisultato(pNext, testo);
+    });
+  };
+}
+
+// ============================================================
+// DDT (documenti di trasporto)
+// ============================================================
+function viewDDT(){
+  if(state.ddtAperto) return viewDDTDettaglio(state.ddtAperto);
+  const rows = state.data.ddt;
+  const puoCreare = ["magazzino","commerciale","admin"].includes(myRole());
+  const clientiOpts = state.data.clienti.map(c=>`<option value="${c.id}">${escapeHtml(c.ragione_sociale)}</option>`).join("");
+  return `
+    ${!puoCreare? "" : `
+    <div class="card">
+      <h2>Nuovo DDT</h2>
+      ${state.data.clienti.length===0? `<div class="msg error">Devi prima creare almeno un cliente.</div>` : `
+      <form id="form-ddt">
+        <div class="form-grid">
+          <div><label>Cliente *</label><select required id="ddt-cliente">${clientiOpts}</select></div>
+          <div><label>Cantiere</label><select id="ddt-cantiere"><option value="">-- nessuno --</option></select></div>
+          <div><label>Causale del trasporto</label><input id="ddt-causale" placeholder="es. Vendita, Conto lavoro, Reso..."></div>
+        </div>
+        <label>Note</label><textarea id="ddt-note"></textarea>
+        <div style="margin-top:10px;"><button type="submit">Crea DDT</button></div>
+      </form>`}
+    </div>`}
+    <div class="card">
+      <h2>Elenco DDT (${rows.length})</h2>
+      ${exportButtonsHtml("exp-ddt")}
+      ${rows.length===0? `<div class="empty">Nessun DDT creato.</div>` : `
+      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Causale</th><th>Stato</th><th>Apertura</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(dd=>`
+          <tr>
+            <td>#${ddtNumero(dd.numero)}</td>
+            <td>${escapeHtml(clienteNome(dd.cliente_id))}</td>
+            <td>${escapeHtml(cantiereNome(dd.cantiere_id))}</td>
+            <td>${escapeHtml(dd.causale||"-")}</td>
+            <td>${badge(dd.stato)}</td>
+            <td>${fmtDate(dd.data_apertura)}</td>
+            <td><button class="secondary btn-apri-ddt" data-id="${dd.id}">Apri</button></td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireDDT(){
+  if(state.ddtAperto){ wireDDTDettaglio(state.ddtAperto); return; }
+  const selCliente = document.getElementById("ddt-cliente");
+  const selCantiere = document.getElementById("ddt-cantiere");
+  function aggiornaCantieri(){
+    if(!selCliente) return;
+    const opts = state.data.cantieri.filter(k=>k.cliente_id===selCliente.value)
+      .map(k=>`<option value="${k.id}">${escapeHtml(k.nome)}</option>`).join("");
+    selCantiere.innerHTML = `<option value="">-- nessuno --</option>` + opts;
+  }
+  if(selCliente){ aggiornaCantieri(); selCliente.onchange = aggiornaCantieri; }
+  const f = document.getElementById("form-ddt");
+  if(f) f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      cliente_id: selCliente.value,
+      cantiere_id: selCantiere.value || null,
+      causale: document.getElementById("ddt-causale").value.trim() || null,
+      note: document.getElementById("ddt-note").value.trim() || null,
+      stato: "aperto",
+      creato_da: state.session.user.id,
+    };
+    const { error } = await sb.from("ddt").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  document.querySelectorAll(".btn-apri-ddt").forEach(b=>{ b.onclick = ()=>{ state.ddtAperto = b.dataset.id; render(); }; });
+  wireExportButtons("exp-ddt", "ddt", "DDT",
+    ["Numero","Cliente","Cantiere","Causale","Stato","Apertura","Chiusura","Note"],
+    ()=>state.data.ddt.map(dd=>[ddtNumero(dd.numero), clienteNome(dd.cliente_id), cantiereNome(dd.cantiere_id), dd.causale||"", statoLabel(dd.stato), fmtDate(dd.data_apertura), dd.data_chiusura? fmtDate(dd.data_chiusura):"", dd.note||""])
+  );
+}
+function viewDDTDettaglio(id){
+  const dd = state.data.ddt.find(x=>x.id===id);
+  if(!dd){ state.ddtAperto=null; return viewDDT(); }
+  const righe = state.data.ddtRighe.filter(r=>r.ddt_id===id);
+  const articoliOpts = state.data.articoli.map(a=>`<option value="${a.id}">${escapeHtml(a.codice)} - ${escapeHtml(a.descrizione)}</option>`).join("");
+  const puoModificare = ["magazzino","commerciale","admin"].includes(myRole()) && dd.stato==="aperto";
+  return `
+    <button class="secondary" id="btn-torna-ddt">&larr; Torna all'elenco</button>
+    <div class="card" style="margin-top:14px;">
+      <h2>DDT #${ddtNumero(dd.numero)} ${badge(dd.stato)}</h2>
+      <p><strong>Cliente:</strong> ${escapeHtml(clienteNome(dd.cliente_id))} &nbsp;
+         <strong>Cantiere:</strong> ${escapeHtml(cantiereNome(dd.cantiere_id))} &nbsp;
+         <strong>Aperto il:</strong> ${fmtDate(dd.data_apertura)}
+         ${dd.data_chiusura? ` &nbsp; <strong>Chiuso il:</strong> ${fmtDate(dd.data_chiusura)}` : ""}</p>
+      ${dd.causale? `<p><strong>Causale:</strong> ${escapeHtml(dd.causale)}</p>` : ""}
+      ${dd.note? `<p><em>${escapeHtml(dd.note)}</em></p>` : ""}
+      <div class="actions">
+        <button class="secondary" id="btn-stampa-ddt">🖨️ Stampa DDT</button>
+        ${dd.stato==="aperto"? `<button class="secondary" id="btn-chiudi-ddt">Chiudi DDT</button>` : ""}
+        ${dd.stato==="chiuso" && myRole()==="admin"? `<button class="secondary" id="btn-riapri-ddt">Riapri DDT</button>` : ""}
+        ${dd.stato==="chiuso" && myRole()!=="admin"? `<small class="hint">Solo l'amministratore può riaprire un DDT chiuso.</small>` : ""}
+        ${myRole()==="admin"? `<button class="danger" id="btn-elimina-ddt">Elimina DDT</button>` : ""}
+      </div>
+    </div>
+    <div class="card">
+      <h2>Righe di carico</h2>
+      ${puoModificare? `
+      <form id="form-riga-ddt">
+        <div class="form-grid">
+          <div><label>Articolo</label><select id="rd-articolo">${articoliOpts}</select></div>
+          <div><label>Descrizione (facoltativa, es. per merce non a catalogo)</label><input id="rd-descrizione"></div>
+          <div><label>Quantità *</label><input required type="number" step="0.01" min="0.01" id="rd-quantita" value="1"></div>
+        </div>
+        <div style="margin-top:10px;"><button type="submit">Aggiungi riga</button></div>
+      </form>` : ""}
+      <table style="margin-top:14px;"><thead><tr><th>Articolo</th><th>Descrizione</th><th style="text-align:right;">Quantità</th></tr></thead>
+      <tbody>
+        ${righe.length===0? `<tr><td colspan="3" class="empty">Nessuna riga di carico.</td></tr>` : righe.map(r=>`
+          <tr><td>${r.articolo_id? escapeHtml(articoloLabel(r.articolo_id)) : "-"}</td><td>${escapeHtml(r.descrizione||"-")}</td><td style="text-align:right;">${r.quantita}</td></tr>
+        `).join("")}
+      </tbody></table>
+    </div>
+  `;
+}
+function wireDDTDettaglio(id){
+  document.getElementById("btn-torna-ddt").onclick = ()=>{ state.ddtAperto=null; render(); };
+  const dd = state.data.ddt.find(x=>x.id===id);
+  document.getElementById("btn-stampa-ddt").onclick = ()=>stampaDDT(id);
+  const btnChiudi = document.getElementById("btn-chiudi-ddt");
+  if(btnChiudi) btnChiudi.onclick = async ()=>{
+    const { error } = await sb.from("ddt").update({ stato:"chiuso", data_chiusura: new Date().toISOString() }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnRiapri = document.getElementById("btn-riapri-ddt");
+  if(btnRiapri) btnRiapri.onclick = async ()=>{
+    if(!confirm("Riaprire questo DDT?")) return;
+    const { error } = await sb.from("ddt").update({ stato:"aperto", data_chiusura: null }).eq("id", id);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+  const btnElimina = document.getElementById("btn-elimina-ddt");
+  if(btnElimina) btnElimina.onclick = ()=>confirmDelete("ddt", id, `il DDT #${ddtNumero(dd.numero)}`, ()=>{ state.ddtAperto=null; });
+  const fRiga = document.getElementById("form-riga-ddt");
+  if(fRiga) fRiga.onsubmit = async (e)=>{
+    e.preventDefault();
+    const payload = {
+      ddt_id: id,
+      articolo_id: document.getElementById("rd-articolo").value || null,
+      descrizione: document.getElementById("rd-descrizione").value.trim() || null,
+      quantita: Number(document.getElementById("rd-quantita").value),
+    };
+    const { error } = await sb.from("ddt_righe").insert(payload);
+    if(error){ alert("Errore: "+error.message); return; }
+    render();
+  };
+}
+// ============================================================
+// ETICHETTE QR (per stampare un codice da attaccare fisicamente sul pezzo)
+// ============================================================
+async function stampaEtichetteQR(pezziDaStampare){
+  if(typeof QRCode==="undefined"){ alert("La libreria per generare i QR non si è ancora caricata: riprova tra qualche secondo."); return; }
+  let etichette;
+  try{
+    etichette = await Promise.all(pezziDaStampare.map(async p=>({
+      dtr: p.dtr, articolo: articoloLabel(p.articolo_id),
+      img: await QRCode.toDataURL(p.dtr, { width: 220, margin: 1 }),
+    })));
+  } catch(err){
+    alert("Errore nella generazione dei QR: "+err.message);
+    return;
+  }
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Etichette QR</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:20px;}
+  .griglia{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  .etichetta{border:1px dashed #999;border-radius:8px;padding:10px;text-align:center;page-break-inside:avoid;}
+  .etichetta img{width:120px;height:120px;}
+  .etichetta .dtr{font-weight:bold;margin-top:6px;font-size:13px;}
+  .etichetta .art{font-size:11px;color:#555;}
+  @media print{ button{display:none;} }
+</style></head><body>
+  <button onclick="window.print()" style="margin-bottom:16px;padding:10px 18px;font-size:14px;">Stampa queste etichette</button>
+  <div class="griglia">
+    ${etichette.map(e=>`<div class="etichetta"><img src="${e.img}"><div class="dtr">${escapeHtml(e.dtr)}</div><div class="art">${escapeHtml(e.articolo)}</div></div>`).join("")}
+  </div>
+</body></html>`;
+  const w = window.open("", "_blank");
+  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+function stampaDDT(id){
+  const dd = state.data.ddt.find(x=>x.id===id);
+  if(!dd) return;
+  const righe = state.data.ddtRighe.filter(r=>r.ddt_id===id);
+  const cliente = state.data.clienti.find(c=>c.id===dd.cliente_id) || {};
+  const righeHtml = righe.map(r=>`
+    <tr><td>${r.articolo_id? escapeHtml(articoloLabel(r.articolo_id)) : "-"}</td><td>${escapeHtml(r.descrizione||"-")}</td><td style="text-align:right;">${r.quantita}</td></tr>`).join("");
+  const html = `<!DOCTYPE html>
+<html lang="it"><head><meta charset="UTF-8"><title>DDT #${ddtNumero(dd.numero)}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#1c2530;margin:40px;}
+  h1{font-size:22px;margin-bottom:0;}
+  .sub{color:#66707d;margin-top:4px;margin-bottom:28px;}
+  table{width:100%;border-collapse:collapse;margin-top:16px;}
+  th,td{padding:8px 10px;border-bottom:1px solid #ddd;font-size:13px;text-align:left;}
+  th{background:#f4f6f9;}
+  .box{border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:20px;}
+  @media print{ button{display:none;} }
+</style></head>
+<body>
+  <h1>Documento di Trasporto #${ddtNumero(dd.numero)}</h1>
+  <p class="sub">Data apertura: ${fmtDate(dd.data_apertura)}${dd.data_chiusura? " — Chiuso il: "+fmtDate(dd.data_chiusura) : ""}</p>
+  <div class="box">
+    <strong>Cliente:</strong> ${escapeHtml(cliente.ragione_sociale||"-")}<br>
+    ${cliente.indirizzo? `Indirizzo: ${escapeHtml(cliente.indirizzo)}<br>` : ""}
+    ${cliente.piva? `P.IVA: ${escapeHtml(cliente.piva)}<br>` : ""}
+    ${dd.cantiere_id? `Cantiere: ${escapeHtml(cantiereNome(dd.cantiere_id))}<br>` : ""}
+    ${dd.causale? `Causale: ${escapeHtml(dd.causale)}<br>` : ""}
+  </div>
+  ${dd.note? `<p><em>${escapeHtml(dd.note)}</em></p>` : ""}
+  <table>
+    <thead><tr><th>Articolo</th><th>Descrizione</th><th style="text-align:right;">Quantità</th></tr></thead>
+    <tbody>${righeHtml}</tbody>
+  </table>
+  <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:14px;">Stampa questa pagina</button>
+</body></html>`;
+  const w = window.open("", "_blank");
+  if(!w){ alert("Il browser ha bloccato l'apertura della finestra. Consenti i popup per questo sito e riprova."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ============================================================
+// REGISTRO MODIFICHE (solo admin)
+// ============================================================
+function nomeTabella(t){
+  const map = { clienti:"Cliente", cantieri:"Cantiere", pezzi:"Pezzo (DTR)", articoli:"Articolo", service_orders:"Service Order", preventivi:"Preventivo", fatture:"Fattura", ddt:"DDT" };
+  return map[t] || t;
+}
+function viewRegistroModifiche(){
+  const filtro = state.filtroLogModifiche || "tutte";
+  let rows = state.data.logModifiche;
+  if(filtro!=="tutte") rows = rows.filter(l=>l.tabella===filtro);
+  const tabelle = ["clienti","cantieri","pezzi","articoli","service_orders","preventivi","fatture","ddt"];
+  return `
+    <div class="card">
+      <h2>Registro storico delle modifiche</h2>
+      <p><small class="hint">Ogni riga mostra un campo cambiato: chi lo ha modificato, quando, il valore prima e dopo. Visibile solo all'amministratore.</small></p>
+      <div class="pill-select" id="filtro-log">
+        <button data-f="tutte" class="${filtro==="tutte"?"active":""}">Tutte</button>
+        ${tabelle.map(t=>`<button data-f="${t}" class="${filtro===t?"active":""}">${nomeTabella(t)}</button>`).join("")}
+      </div>
+      ${exportButtonsHtml("exp-log")}
+      ${rows.length===0? `<div class="empty">Nessuna modifica registrata.</div>` : `
+      <table><thead><tr><th>Quando</th><th>Tabella</th><th>Campo</th><th>Prima</th><th>Dopo</th><th>Utente</th></tr></thead>
+      <tbody>
+        ${rows.map(l=>`
+          <tr>
+            <td>${fmtDate(l.created_at)}</td>
+            <td>${escapeHtml(nomeTabella(l.tabella))}</td>
+            <td>${escapeHtml(l.campo||"-")}</td>
+            <td>${escapeHtml(l.valore_prima==null?"-":String(l.valore_prima).slice(0,60))}</td>
+            <td>${escapeHtml(l.valore_dopo==null?"-":String(l.valore_dopo).slice(0,60))}</td>
+            <td>${escapeHtml(nomeUtente(l.utente_id))}</td>
+          </tr>
+        `).join("")}
+      </tbody></table>`}
+    </div>
+  `;
+}
+function wireRegistroModifiche(){
+  document.querySelectorAll("#filtro-log button").forEach(b=>{
+    b.onclick = ()=>{ state.filtroLogModifiche = b.dataset.f; render(); };
+  });
+  const rows = state.filtroLogModifiche && state.filtroLogModifiche!=="tutte"? state.data.logModifiche.filter(l=>l.tabella===state.filtroLogModifiche) : state.data.logModifiche;
+  wireExportButtons("exp-log", "registro_modifiche", "Registro modifiche",
+    ["Quando","Tabella","Campo","Prima","Dopo","Utente"],
+    ()=>rows.map(l=>[fmtDate(l.created_at), nomeTabella(l.tabella), l.campo||"", l.valore_prima==null?"":String(l.valore_prima), l.valore_dopo==null?"":String(l.valore_dopo), nomeUtente(l.utente_id)])
+  );
+}
+
+// ============================================================
+// UTENTI E RUOLI (solo admin)
+// ============================================================
+function viewUtenti(){
+  const rows = state.data.profiles;
+  return `
+    <div class="card">
+      <h2>Utenti e ruoli</h2>
+      <p><small class="hint">Assegna a ciascun utente il ruolo corretto. Magazzino: gestisce quantità e pezzi. Commerciale: gestisce clienti/cantieri. Contabile: vede clienti/cantieri (non il magazzino). Socio/Azionista: sola lettura dell'andamento aziendale. Admin: accesso completo.</small></p>
+      <table><thead><tr><th>Utente</th><th>Ruolo attuale</th><th>Cambia ruolo</th></tr></thead>
+      <tbody>
+        ${rows.map(p=>`
+          <tr>
+            <td>${escapeHtml(p.full_name||"-")}</td>
+            <td>${badge(p.ruolo==="admin"?"chiuso":p.ruolo==="magazzino"?"disponibile":p.ruolo==="commerciale"?"in_uso":p.ruolo==="shareholder"?"aperto":"in_revisione")} ${escapeHtml(ruoloLabel(p.ruolo))}</td>
+            <td>
+              <select data-id="${p.id}" class="sel-ruolo">
+                <option value="admin" ${p.ruolo==="admin"?"selected":""}>Amministratore</option>
+                <option value="magazzino" ${p.ruolo==="magazzino"?"selected":""}>Magazzino</option>
+                <option value="commerciale" ${p.ruolo==="commerciale"?"selected":""}>Commerciale</option>
+                <option value="contabile" ${p.ruolo==="contabile"?"selected":""}>Contabile</option>
+                <option value="shareholder" ${p.ruolo==="shareholder"?"selected":""}>Socio/Azionista</option>
+              </select>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody></table>
+    </div>
+  `;
+}
+function wireUtenti(){
+  document.querySelectorAll(".sel-ruolo").forEach(sel=>{
+    sel.onchange = async ()=>{
+      const { error } = await sb.from("profiles").update({ ruolo: sel.value }).eq("id", sel.dataset.id);
+      if(error){ alert("Errore: "+error.message); render(); return; }
+      render();
+    };
+  });
+}
+
+// ============================================================
+// AVVIO
+// ============================================================
+initAuth();
+
+// Registra il service worker: rende possibile installare il gestionale
+// sulla schermata Home del telefono, come una vera app.
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{ navigator.serviceWorker.register("service-worker.js").catch(()=>{}); });
+}
+</script>
+</body>
+</html>
