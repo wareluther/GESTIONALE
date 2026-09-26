@@ -909,14 +909,28 @@ function calcolaFattureScadute(){
     return { fattura:f, giorniRitardo: giorni, fascia: fasciaRitardo(giorni) };
   }).sort((a,b)=>b.giorniRitardo-a.giorniRitardo);
 }
-function calcolaArticoliMovimentati(){
+function calcolaArticoliVenduti(){
+  const idsAccettati = new Set(state.data.preventivi.filter(p=>p.stato==="accettato").map(p=>p.id));
   const map = {};
-  state.data.ddtRighe.forEach(r=>{
+  state.data.preventivoRighe.filter(r=>idsAccettati.has(r.preventivo_id) && r.tipo_prezzo==="vendita").forEach(r=>{
     if(!r.articolo_id) return;
-    map[r.articolo_id] = (map[r.articolo_id]||0) + (Number(r.quantita)||0);
+    if(!map[r.articolo_id]) map[r.articolo_id] = { articoloId:r.articolo_id, quantita:0, valore:0 };
+    map[r.articolo_id].quantita += Number(r.quantita)||0;
+    map[r.articolo_id].valore += totaleRiga(r);
   });
-  return Object.entries(map).map(([articoloId, quantita])=>({ articoloId, quantita }))
-    .sort((a,b)=>b.quantita-a.quantita);
+  return Object.values(map).sort((a,b)=>b.valore-a.valore);
+}
+function calcolaArticoliNoleggiati(){
+  const idsAccettati = new Set(state.data.preventivi.filter(p=>p.stato==="accettato").map(p=>p.id));
+  const map = {};
+  state.data.preventivoRighe.filter(r=>idsAccettati.has(r.preventivo_id) && r.tipo_prezzo && r.tipo_prezzo.indexOf("noleggio")===0).forEach(r=>{
+    if(!r.articolo_id) return;
+    if(!map[r.articolo_id]) map[r.articolo_id] = { articoloId:r.articolo_id, quantita:0, valore:0, perDurata:{ noleggio_giornaliero:0, noleggio_settimanale:0, noleggio_mensile:0 } };
+    map[r.articolo_id].quantita += Number(r.quantita)||0;
+    map[r.articolo_id].valore += totaleRiga(r);
+    map[r.articolo_id].perDurata[r.tipo_prezzo] = (map[r.articolo_id].perDurata[r.tipo_prezzo]||0) + (Number(r.quantita)||0);
+  });
+  return Object.values(map).sort((a,b)=>b.valore-a.valore);
 }
 function calcolaClientiDaRicontattare(){
   const oggi = new Date(new Date().toDateString());
@@ -945,10 +959,12 @@ function viewReport(){
   const vedeContabilitaRep = ["contabile","admin"].includes(ruolo);
   const vedeMagazzinoRep = ["magazzino","admin"].includes(ruolo);
   const vedeCrmRep = ["commerciale","admin"].includes(ruolo);
+  const vedeVenditeRep = ["magazzino","commerciale","admin"].includes(ruolo);
   const tabs = [
     ["fatturato","Fatturato per cliente", vedeContabilitaRep],
     ["scadute","Fatture scadute", vedeContabilitaRep],
-    ["articoli","Articoli più movimentati", vedeMagazzinoRep],
+    ["venduti","Articoli venduti", vedeVenditeRep],
+    ["noleggiati","Articoli noleggiati", vedeVenditeRep],
     ["clienti","Clienti da ricontattare", vedeCrmRep],
   ].filter(t=>t[2]);
   if(tabs.length===0) return `<div class="card"><div class="empty">Nessun report disponibile per il tuo ruolo.</div></div>`;
@@ -956,7 +972,8 @@ function viewReport(){
   let corpo = "";
   if(state.reportTab==="fatturato") corpo = renderReportFatturatoCliente();
   else if(state.reportTab==="scadute") corpo = renderReportFattureScadute();
-  else if(state.reportTab==="articoli") corpo = renderReportArticoliMovimentati();
+  else if(state.reportTab==="venduti") corpo = renderReportArticoliVenduti();
+  else if(state.reportTab==="noleggiati") corpo = renderReportArticoliNoleggiati();
   else if(state.reportTab==="clienti") corpo = renderReportClientiDaRicontattare();
   return `
     <div class="card">
@@ -975,7 +992,8 @@ function wireReport(){
   });
   if(state.reportTab==="fatturato") wireReportFatturatoCliente();
   else if(state.reportTab==="scadute") wireReportFattureScadute();
-  else if(state.reportTab==="articoli") wireReportArticoliMovimentati();
+  else if(state.reportTab==="venduti") wireReportArticoliVenduti();
+  else if(state.reportTab==="noleggiati") wireReportArticoliNoleggiati();
   else if(state.reportTab==="clienti") wireReportClientiDaRicontattare();
 }
 function renderReportFatturatoCliente(){
@@ -1050,36 +1068,77 @@ function wireReportFattureScadute(){
     ["Numero","Cliente","Scadenza","Giorni di ritardo","Fascia","Importo"],
     ()=>righe.map(r=>[r.fattura.numero, clienteNome(r.fattura.cliente_id), fmtDateOnly(r.fattura.data_scadenza), r.giorniRitardo, r.fascia, Number(r.fattura.importo_totale).toFixed(2)]));
 }
-function renderReportArticoliMovimentati(){
-  const righe = calcolaArticoliMovimentati();
+function renderReportArticoliVenduti(){
+  const righe = calcolaArticoliVenduti();
   const top = righe.slice(0,15);
+  const totaleValore = righe.reduce((s,r)=>s+r.valore,0);
   return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(totaleValore)}</div><div class="lbl">Valore totale venduto (preventivi accettati)</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Articoli diversi venduti</div></div>
+    </div>
     <div class="card">
-      <p><small class="hint">Quantità totale movimentata (caricata/scaricata) tramite DDT per ogni articolo.</small></p>
-      <h2>Articoli più movimentati (primi 15)</h2>
-      <div class="chart-wrap"><canvas id="chart-report-articoli"></canvas></div>
+      <p><small class="hint">Calcolato sulle righe "Vendita" dei preventivi accettati (le bozze e i preventivi rifiutati non contano).</small></p>
+      <h2>Articoli più venduti (primi 15 per valore)</h2>
+      <div class="chart-wrap"><canvas id="chart-report-venduti"></canvas></div>
     </div>
     <div class="card">
       <h2>Dettaglio per articolo</h2>
-      ${exportButtonsHtml("exp-report-articoli")}
-      ${righe.length===0? `<div class="empty">Nessun movimento registrato tramite DDT.</div>` : `
-      <table><thead><tr><th>Articolo</th><th>Quantità movimentata</th></tr></thead>
-      <tbody>${righe.map(r=>`<tr><td>${escapeHtml(articoloLabel(r.articoloId))}</td><td>${r.quantita}</td></tr>`).join("")}</tbody>
+      ${exportButtonsHtml("exp-report-venduti")}
+      ${righe.length===0? `<div class="empty">Nessuna vendita registrata nei preventivi accettati.</div>` : `
+      <table><thead><tr><th>Articolo</th><th>Quantità venduta</th><th>Valore</th></tr></thead>
+      <tbody>${righe.map(r=>`<tr><td>${escapeHtml(articoloLabel(r.articoloId))}</td><td>${r.quantita}</td><td>${fmtMoney(r.valore)}</td></tr>`).join("")}</tbody>
       </table>`}
     </div>
   `;
 }
-function wireReportArticoliMovimentati(){
-  const righe = calcolaArticoliMovimentati();
+function wireReportArticoliVenduti(){
+  const righe = calcolaArticoliVenduti();
   const top = righe.slice(0,15);
-  disegnaGrafico("chart-report-articoli", {
+  disegnaGrafico("chart-report-venduti", {
     type: "bar",
-    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Quantità", data: top.map(r=>r.quantita), backgroundColor: COLORE_AQUA, borderRadius:4 }] },
-    options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true } } }
+    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore venduto (€)", data: top.map(r=>r.valore), backgroundColor: COLORE_BLU, borderRadius:4 }] },
+    options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
-  wireExportButtons("exp-report-articoli", "articoli_movimentati", "Articoli più movimentati",
-    ["Articolo","Quantità movimentata"],
-    ()=>righe.map(r=>[articoloLabel(r.articoloId), r.quantita]));
+  wireExportButtons("exp-report-venduti", "articoli_venduti", "Articoli venduti",
+    ["Articolo","Quantità venduta","Valore"],
+    ()=>righe.map(r=>[articoloLabel(r.articoloId), r.quantita, r.valore.toFixed(2)]));
+}
+function renderReportArticoliNoleggiati(){
+  const righe = calcolaArticoliNoleggiati();
+  const top = righe.slice(0,15);
+  const totaleValore = righe.reduce((s,r)=>s+r.valore,0);
+  return `
+    <div class="kpi-grid" style="margin-bottom:18px;">
+      <div class="kpi"><div class="num">${fmtMoney(totaleValore)}</div><div class="lbl">Valore totale noleggiato (preventivi accettati)</div></div>
+      <div class="kpi"><div class="num">${righe.length}</div><div class="lbl">Articoli diversi noleggiati</div></div>
+    </div>
+    <div class="card">
+      <p><small class="hint">Calcolato sulle righe "Noleggio" (giornaliero/settimanale/mensile) dei preventivi accettati.</small></p>
+      <h2>Articoli più noleggiati (primi 15 per valore)</h2>
+      <div class="chart-wrap"><canvas id="chart-report-noleggiati"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Dettaglio per articolo</h2>
+      ${exportButtonsHtml("exp-report-noleggiati")}
+      ${righe.length===0? `<div class="empty">Nessun noleggio registrato nei preventivi accettati.</div>` : `
+      <table><thead><tr><th>Articolo</th><th>Quantità (giornaliero)</th><th>Quantità (settimanale)</th><th>Quantità (mensile)</th><th>Valore</th></tr></thead>
+      <tbody>${righe.map(r=>`<tr><td>${escapeHtml(articoloLabel(r.articoloId))}</td><td>${r.perDurata.noleggio_giornaliero||0}</td><td>${r.perDurata.noleggio_settimanale||0}</td><td>${r.perDurata.noleggio_mensile||0}</td><td>${fmtMoney(r.valore)}</td></tr>`).join("")}</tbody>
+      </table>`}
+    </div>
+  `;
+}
+function wireReportArticoliNoleggiati(){
+  const righe = calcolaArticoliNoleggiati();
+  const top = righe.slice(0,15);
+  disegnaGrafico("chart-report-noleggiati", {
+    type: "bar",
+    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore noleggiato (€)", data: top.map(r=>r.valore), backgroundColor: COLORE_ARANCIO, borderRadius:4 }] },
+    options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
+  });
+  wireExportButtons("exp-report-noleggiati", "articoli_noleggiati", "Articoli noleggiati",
+    ["Articolo","Quantità giornaliero","Quantità settimanale","Quantità mensile","Valore"],
+    ()=>righe.map(r=>[articoloLabel(r.articoloId), r.perDurata.noleggio_giornaliero||0, r.perDurata.noleggio_settimanale||0, r.perDurata.noleggio_mensile||0, r.valore.toFixed(2)]));
 }
 function renderReportClientiDaRicontattare(){
   const righe = calcolaClientiDaRicontattare();
