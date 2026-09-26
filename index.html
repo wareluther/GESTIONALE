@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gestionale Aziendale</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#1e5cb3">
+<meta name="theme-color" content="#2f6fe0">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -18,76 +18,103 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --primary:#1e5cb3; --primary-dark:#154585; --bg:#f4f6f9; --card:#ffffff;
-    --border:#e1e5ea; --text:#1c2530; --muted:#66707d; --danger:#c0392b; --ok:#1f8b4c;
-    --warn:#b8860b;
+    --primary:#2f6fe0; --primary-dark:#1f52ad; --primary-light:#eaf1fd;
+    --accent:#eb6834; --aqua:#1baf7a;
+    --bg:#eef1f6; --card:#ffffff; --border:#e2e6ee; --border-soft:#edf0f5;
+    --text:#1b2333; --muted:#6b7688; --muted-soft:#98a2b3;
+    --danger:#d9483d; --danger-bg:#fdeceb;
+    --ok:#1f9d5e; --ok-bg:#e5f8ee;
+    --warn:#c9860f; --warn-bg:#fdf2dc;
+    --radius-sm:8px; --radius:12px; --radius-lg:16px;
+    --shadow-sm:0 1px 2px rgba(23,32,58,.06);
+    --shadow-md:0 8px 24px -8px rgba(23,32,58,.2);
+    --shadow-header:0 2px 10px rgba(20,40,90,.15);
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;}
   #app{min-height:100vh;display:flex;flex-direction:column;}
-  header{background:var(--primary);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
-  header h1{font-size:18px;margin:0;font-weight:600;}
-  header .user-box{font-size:13px;display:flex;align-items:center;gap:12px;}
-  button{cursor:pointer;border:none;border-radius:6px;padding:8px 14px;font-size:14px;background:var(--primary);color:#fff;}
+  header{background:linear-gradient(135deg,var(--primary) 0%,var(--primary-dark) 100%);color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;box-shadow:var(--shadow-header);position:relative;z-index:2;}
+  header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:-.01em;}
+  header .user-box{font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  header .user-box span{opacity:.95;}
+  .lang-switch{display:flex;background:rgba(255,255,255,.16);border-radius:8px;padding:2px;}
+  .lang-switch button{background:transparent;color:#fff;padding:5px 10px;font-size:11px;font-weight:700;border-radius:6px;opacity:.8;box-shadow:none;}
+  .lang-switch button.active{background:#fff;color:var(--primary-dark);opacity:1;}
+  .lang-switch button:hover{background:rgba(255,255,255,.3);}
+  .lang-switch button.active:hover{background:#fff;}
+  button{cursor:pointer;border:none;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600;background:var(--primary);color:#fff;transition:background .15s ease,transform .05s ease;box-shadow:var(--shadow-sm);}
   button:hover{background:var(--primary-dark);}
-  button.secondary{background:#eef1f5;color:var(--text);}
-  button.secondary:hover{background:#dfe4ea;}
+  button:active{transform:translateY(1px);}
+  button.secondary{background:#eef1f7;color:var(--text);box-shadow:none;}
+  button.secondary:hover{background:#e2e7f0;}
   button.danger{background:var(--danger);}
-  nav{background:#fff;border-bottom:1px solid var(--border);display:flex;gap:4px;padding:0 16px;overflow-x:auto;}
-  nav button{background:transparent;color:var(--muted);border-radius:0;padding:12px 16px;font-weight:500;white-space:nowrap;}
+  button.danger:hover{background:#c13a30;}
+  nav{background:#fff;border-bottom:1px solid var(--border);display:flex;gap:2px;padding:0 20px;overflow-x:auto;}
+  nav button{background:transparent;color:var(--muted);border-radius:0;padding:13px 16px;font-weight:600;font-size:13.5px;white-space:nowrap;box-shadow:none;border-bottom:2px solid transparent;}
   nav button.active{color:var(--primary);border-bottom:2px solid var(--primary);}
-  nav button:hover{background:#f0f3f7;color:var(--primary);}
-  main{flex:1;padding:20px;max-width:1200px;width:100%;margin:0 auto;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:18px;}
-  .card h2{margin-top:0;font-size:16px;}
+  nav button:hover{background:var(--primary-light);color:var(--primary);}
+  main{flex:1;padding:24px;max-width:1240px;width:100%;margin:0 auto;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:18px;box-shadow:var(--shadow-sm);}
+  .card h2{margin-top:0;font-size:16px;font-weight:700;letter-spacing:-.01em;}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
-  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
+  th{color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;background:#fafbfd;}
   tr:hover td{background:#f8fafc;}
-  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;}
-  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
-  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:#fff;color:var(--text);}
-  textarea{min-height:60px;font-family:inherit;}
-  .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;}
-  .badge.disponibile{background:#e3f6ea;color:var(--ok);}
-  .badge.in_uso{background:#e5edfa;color:var(--primary);}
-  .badge.in_revisione,.badge.da_riparare{background:#fdf3d8;color:var(--warn);}
-  .badge.danneggiato,.badge.fuori_servizio{background:#fbe3e1;color:var(--danger);}
-  .badge.aperto{background:#e5edfa;color:var(--primary);}
-  .badge.in_corso{background:#fdf3d8;color:var(--warn);}
-  .badge.chiuso{background:#e3f6ea;color:var(--ok);}
-  .badge.annullato{background:#fbe3e1;color:var(--danger);}
-  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-  .login-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:32px;width:100%;max-width:380px;}
-  .login-box h1{font-size:20px;text-align:center;margin-bottom:4px;}
-  .login-box p.sub{text-align:center;color:var(--muted);font-size:13px;margin-top:0;margin-bottom:20px;}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:14px;}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600;}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);transition:border-color .15s ease,box-shadow .15s ease;font-family:inherit;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light);}
+  textarea{min-height:64px;font-family:inherit;}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.01em;}
+  .badge.disponibile{background:var(--ok-bg);color:var(--ok);}
+  .badge.in_uso{background:var(--primary-light);color:var(--primary);}
+  .badge.in_revisione,.badge.da_riparare{background:var(--warn-bg);color:var(--warn);}
+  .badge.danneggiato,.badge.fuori_servizio{background:var(--danger-bg);color:var(--danger);}
+  .badge.aperto{background:var(--primary-light);color:var(--primary);}
+  .badge.in_corso{background:var(--warn-bg);color:var(--warn);}
+  .badge.chiuso{background:var(--ok-bg);color:var(--ok);}
+  .badge.annullato{background:var(--danger-bg);color:var(--danger);}
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#eef2fb 0%,var(--bg) 55%);}
+  .login-box{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px 32px;width:100%;max-width:380px;box-shadow:var(--shadow-md);}
+  .login-box h1{font-size:21px;text-align:center;margin-bottom:4px;font-weight:800;color:var(--primary-dark);}
+  .login-box p.sub{text-align:center;color:var(--muted);font-size:13px;margin-top:0;margin-bottom:22px;}
   .login-box label{margin-top:12px;}
-  .login-box button{width:100%;margin-top:18px;padding:10px;}
-  .switch-link{text-align:center;margin-top:14px;font-size:13px;color:var(--muted);}
-  .switch-link a{color:var(--primary);cursor:pointer;text-decoration:none;}
-  .msg{padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:12px;}
-  .msg.error{background:#fbe3e1;color:var(--danger);}
-  .msg.ok{background:#e3f6ea;color:var(--ok);}
+  .login-box button{width:100%;margin-top:20px;padding:11px;}
+  .login-box .lang-switch{justify-content:center;background:#eef1f7;}
+  .login-box .lang-switch button{color:var(--muted);}
+  .login-box .lang-switch button.active{background:var(--primary);color:#fff;}
+  .switch-link{text-align:center;margin-top:16px;font-size:13px;color:var(--muted);}
+  .switch-link a{color:var(--primary);cursor:pointer;text-decoration:none;font-weight:600;}
+  .msg{padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;}
+  .msg.error{background:var(--danger-bg);color:var(--danger);}
+  .msg.ok{background:var(--ok-bg);color:var(--ok);}
   .actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
-  .empty{color:var(--muted);font-size:13px;padding:20px;text-align:center;}
-  .pill-select{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
-  .pill-select button{background:#eef1f5;color:var(--text);padding:6px 12px;font-size:12px;}
+  .empty{color:var(--muted-soft);font-size:13px;padding:24px;text-align:center;}
+  .pill-select{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .pill-select button{background:#eef1f7;color:var(--text);padding:7px 14px;font-size:12.5px;box-shadow:none;font-weight:600;}
   .pill-select button.active{background:var(--primary);color:#fff;}
-  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;}
-  .kpi{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;}
-  .kpi .num{font-size:26px;font-weight:700;color:var(--primary);}
-  .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;}
+  .kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-sm);border-top:3px solid var(--primary);}
+  .kpi .num{font-size:27px;font-weight:800;color:var(--text);letter-spacing:-.02em;}
+  .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;font-weight:500;}
   select[multiple]{height:auto;}
-  .close-x{background:transparent;color:var(--muted);padding:4px 8px;}
-  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
-  .modal{background:#fff;border-radius:10px;padding:20px;max-width:520px;width:100%;max-height:85vh;overflow:auto;}
-  .modal h3{margin-top:0;}
+  .close-x{background:transparent;color:var(--muted);padding:4px 8px;box-shadow:none;}
+  .close-x:hover{background:#eef1f7;}
+  .modal-bg{position:fixed;inset:0;background:rgba(20,26,45,.55);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .modal{background:#fff;border-radius:var(--radius-lg);padding:22px;max-width:520px;width:100%;max-height:85vh;overflow:auto;box-shadow:var(--shadow-md);}
+  .modal h3{margin-top:0;font-weight:700;}
   small.hint{color:var(--muted);}
   .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:18px;}
   .chart-wrap{position:relative;height:260px;}
   .chart-wrap canvas{max-width:100%;}
+  @media (max-width:640px){
+    header{padding:12px 16px;} main{padding:16px;} .card{padding:16px;}
+  }
 </style>
 </head>
 <body>
@@ -114,17 +141,35 @@ let state = {
   ddtAperto: null, // id ddt aperto nel dettaglio
   andamentoPeriodo: "rolling12", // rolling12 | annocorrente | annoscorso | confronto
   filtroLogModifiche: "tutte",
+  lang: (function(){ try{ return localStorage.getItem("gestionale_lang") || "it"; }catch(e){ return "it"; } })(),
 };
 
 const app = document.getElementById("app");
 
+// ============================================================
+// TRADUZIONE (italiano/francese) — t(testoIt, testoFr) restituisce il
+// testo nella lingua attualmente selezionata (state.lang). La lingua si
+// sceglie con il pulsante IT/FR in alto e resta salvata sul dispositivo.
+// ============================================================
+function tr(it, fr){ return state.lang === "fr" ? fr : it; }
+function cambiaLingua(nuovaLingua){
+  state.lang = nuovaLingua;
+  try{ localStorage.setItem("gestionale_lang", nuovaLingua); }catch(e){}
+  render();
+}
+
 function statoLabel(s){
-  const map = {
+  const map = tr({
     disponibile:"Disponibile", in_uso:"In uso", in_revisione:"In revisione",
     da_riparare:"Da riparare", danneggiato:"Danneggiato", fuori_servizio:"Fuori servizio",
     attivo:"Attivo", sospeso:"Sospeso", concluso:"Concluso",
     aperto:"Aperto", in_corso:"In corso", chiuso:"Chiuso", annullato:"Annullato"
-  };
+  }, {
+    disponibile:"Disponible", in_uso:"En cours d'utilisation", in_revisione:"En révision",
+    da_riparare:"À réparer", danneggiato:"Endommagé", fuori_servizio:"Hors service",
+    attivo:"Actif", sospeso:"Suspendu", concluso:"Terminé",
+    aperto:"Ouvert", in_corso:"En cours", chiuso:"Clôturé", annullato:"Annulé"
+  });
   return map[s] || s;
 }
 function badge(s){ return `<span class="badge ${s}">${statoLabel(s)}</span>`; }
@@ -457,10 +502,10 @@ function articoloLabel(id){ const a = state.data.articoli.find(x=>x.id===id); re
 function pezzoLabel(id){ const p = state.data.pezzi.find(x=>x.id===id); return p ? `${p.dtr} (${articoloLabel(p.articolo_id)})` : "-"; }
 function myProfile(){ return state.session ? state.data.profiles.find(p=>p.id===state.session.user.id) : null; }
 function myRole(){ const p = myProfile(); return p ? p.ruolo : null; }
-function ruoloLabel(r){ const map={admin:"Amministratore",magazzino:"Magazzino",commerciale:"Commerciale",contabile:"Contabile",shareholder:"Socio/Azionista"}; return map[r]||r; }
+function ruoloLabel(r){ const map=tr({admin:"Amministratore",magazzino:"Magazzino",commerciale:"Commerciale",contabile:"Contabile",shareholder:"Socio/Azionista"},{admin:"Administrateur",magazzino:"Entrepôt",commerciale:"Commercial",contabile:"Comptable",shareholder:"Actionnaire"}); return map[r]||r; }
 function prezzoArticolo(articoloId){ return state.data.listino.find(l=>l.articolo_id===articoloId) || null; }
-function fmtMoney(n){ if(n==null || isNaN(n)) return "-"; return Number(n).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})+" €"; }
-function tipoPrezzoLabel(t){ const map={vendita:"Vendita",noleggio_giornaliero:"Noleggio giorno",noleggio_settimanale:"Noleggio settimana",noleggio_mensile:"Noleggio mese"}; return map[t]||t; }
+function fmtMoney(n){ if(n==null || isNaN(n)) return "-"; return Math.round(Number(n)).toLocaleString("fr-FR",{maximumFractionDigits:0})+" FCFA"; }
+function tipoPrezzoLabel(tp){ const map=tr({vendita:"Vendita",noleggio_giornaliero:"Noleggio giorno",noleggio_settimanale:"Noleggio settimana",noleggio_mensile:"Noleggio mese"},{vendita:"Vente",noleggio_giornaliero:"Location jour",noleggio_settimanale:"Location semaine",noleggio_mensile:"Location mois"}); return map[tp]||tp; }
 function totaleRiga(r){ return r.quantita * r.prezzo_unitario * (1 - (r.sconto_percentuale||0)/100); }
 function totalePreventivo(preventivoId){
   const righe = state.data.preventivoRighe.filter(r=>r.preventivo_id===preventivoId);
@@ -470,11 +515,11 @@ function totalePreventivo(preventivoId){
   return sub * (1 - scontoGlobale/100);
 }
 function statoPreventivoLabelClass(s){ const map={bozza:"in_revisione",inviato:"in_uso",accettato:"chiuso",rifiutato:"danneggiato"}; return map[s]||s; }
-function statoPreventivoLabel(s){ const map={bozza:"Bozza",inviato:"Inviato",accettato:"Accettato",rifiutato:"Rifiutato"}; return map[s]||s; }
+function statoPreventivoLabel(s){ const map=tr({bozza:"Bozza",inviato:"Inviato",accettato:"Accettato",rifiutato:"Rifiutato"},{bozza:"Brouillon",inviato:"Envoyé",accettato:"Accepté",rifiutato:"Refusé"}); return map[s]||s; }
 function fornitoreNome(id){ const f = state.data.fornitori.find(x=>x.id===id); return f ? f.ragione_sociale : "-"; }
 function isScaduta(f){ return f.stato==="non_pagata" && f.data_scadenza && new Date(f.data_scadenza) < new Date(new Date().toDateString()); }
 function statoFatturaEffettivo(f){ return isScaduta(f) ? "scaduta" : f.stato; }
-function statoFatturaLabel(s){ const map={non_pagata:"Non pagata",pagata:"Pagata",insoluto:"Insoluto",scaduta:"Scaduta"}; return map[s]||s; }
+function statoFatturaLabel(s){ const map=tr({non_pagata:"Non pagata",pagata:"Pagata",insoluto:"Insoluto",scaduta:"Scaduta"},{non_pagata:"Non payée",pagata:"Payée",insoluto:"Impayée",scaduta:"Échue"}); return map[s]||s; }
 function statoFatturaClass(s){ const map={non_pagata:"in_uso",pagata:"chiuso",insoluto:"danneggiato",scaduta:"da_riparare"}; return map[s]||s; }
 function fmtDateOnly(d){ if(!d) return "-"; return new Date(d).toLocaleDateString("it-IT"); }
 
@@ -503,42 +548,47 @@ async function render(){
     if(!erroreAuto) await loadAll();
   }
 
-  const navItems = [["dashboard","Dashboard",isOperativo],
-    ["clienti","Clienti",isOperativo],
-    ["cantieri","Cantieri",isOperativo],
-    ["magazzino","Magazzino",vedeMagazzino],
-    ["pezzi","Pezzi (DTR)",vedeMagazzino],
-    ["inventariorapido","📱 Inventario rapido",vedeInventarioRapido],
-    ["ddt","DDT",vedeMagazzino],
-    ["listino","Listino prezzi",vedePrezzi],
-    ["preventivi","Preventivi",vedePrezzi],
+  const navItems = [["dashboard",tr("Dashboard","Tableau de bord"),isOperativo],
+    ["clienti",tr("Clienti","Clients"),isOperativo],
+    ["cantieri",tr("Cantieri","Chantiers"),isOperativo],
+    ["magazzino",tr("Magazzino","Entrepôt"),vedeMagazzino],
+    ["pezzi",tr("Pezzi (DTR)","Pièces (DTR)"),vedeMagazzino],
+    ["inventariorapido",tr("📱 Inventario rapido","📱 Inventaire rapide"),vedeInventarioRapido],
+    ["ddt","DDT/BL",vedeMagazzino],
+    ["listino",tr("Listino prezzi","Liste des prix"),vedePrezzi],
+    ["preventivi",tr("Preventivi","Devis"),vedePrezzi],
     ["serviceorder","Service Order",vedeMagazzino],
-    ["fornitori","Fornitori",vedeContabilita],
-    ["fatture","Fatture",vedeContabilita],
-    ["cassa","Cassa",vedeContabilita],
-    ["messaggi","Messaggi",isOperativo],
-    ["andamento","Andamento azienda",vedeAndamento],
-    ["report","Report avanzati",vedeReport],
-    ["registromodifiche","Registro modifiche",ruolo==="admin"],
-    ["utenti","Utenti",ruolo==="admin"]];
+    ["fornitori",tr("Fornitori","Fournisseurs"),vedeContabilita],
+    ["fatture",tr("Fatture","Factures"),vedeContabilita],
+    ["cassa",tr("Cassa","Caisse"),vedeContabilita],
+    ["messaggi",tr("Messaggi","Messages"),isOperativo],
+    ["andamento",tr("Andamento azienda","Performance de l'entreprise"),vedeAndamento],
+    ["report",tr("Report avanzati","Rapports avancés"),vedeReport],
+    ["registromodifiche",tr("Registro modifiche","Historique des modifications"),ruolo==="admin"],
+    ["utenti",tr("Utenti","Utilisateurs"),ruolo==="admin"]];
   if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
 
   const nonLette = isOperativo? state.data.notificheEventi.filter(ev=>!state.data.notificheLette.some(l=>l.evento_id===ev.id)).length : 0;
 
   app.innerHTML = `
     <header>
-      <h1>Gestionale Aziendale</h1>
+      <h1>${tr("Gestionale Aziendale","Gestion d'entreprise")}</h1>
       <div class="user-box">
-        ${isOperativo? `<button class="secondary" id="btn-ricerca-globale">🔎 Cerca</button>` : ""}
-        ${isOperativo? `<button class="secondary" id="btn-notifiche">🔔 Notifiche${nonLette>0? ` <span class="badge danneggiato">${nonLette}</span>` : ""}</button>` : ""}
+        <div class="lang-switch" id="lang-switch">
+          <button data-lang="it" class="${state.lang==="it"?"active":""}">IT</button>
+          <button data-lang="fr" class="${state.lang==="fr"?"active":""}">FR</button>
+        </div>
+        ${isOperativo? `<button class="secondary" id="btn-ricerca-globale">🔎 ${tr("Cerca","Rechercher")}</button>` : ""}
+        ${isOperativo? `<button class="secondary" id="btn-notifiche">🔔 ${tr("Notifiche","Notifications")}${nonLette>0? ` <span class="badge danneggiato">${nonLette}</span>` : ""}</button>` : ""}
         <span>${escapeHtml(state.session.user.email)} ${ruolo? `<span class="badge in_uso">${escapeHtml(ruoloLabel(ruolo))}</span>` : ""}</span>
-        <button class="secondary" id="btn-logout">Esci</button>
+        <button class="secondary" id="btn-logout">${tr("Esci","Déconnexion")}</button>
       </div>
     </header>
     <nav id="main-nav">${navItems.filter(n=>n[2]).map(n=>navBtn(n[0],n[1])).join("")}</nav>
-    <main id="main-content"><div class="empty">Caricamento...</div></main>
+    <main id="main-content"><div class="empty">${tr("Caricamento...","Chargement...")}</div></main>
   `;
   document.getElementById("btn-logout").onclick = handleLogout;
+  document.querySelectorAll("#lang-switch button").forEach(b=>{ b.onclick = ()=>cambiaLingua(b.dataset.lang); });
   const btnNotifiche = document.getElementById("btn-notifiche");
   if(btnNotifiche) btnNotifiche.onclick = apriNotifiche;
   const btnRicerca = document.getElementById("btn-ricerca-globale");
@@ -580,25 +630,30 @@ function renderLogin(){
   app.innerHTML = `
     <div class="login-wrap">
       <div class="login-box">
-        <h1>Gestionale Aziendale</h1>
-        <p class="sub">${isSignup? "Crea il tuo account" : "Accedi al tuo account"}</p>
+        <div class="lang-switch" id="lang-switch-login" style="margin-bottom:14px;">
+          <button data-lang="it" class="${state.lang==="it"?"active":""}">IT</button>
+          <button data-lang="fr" class="${state.lang==="fr"?"active":""}">FR</button>
+        </div>
+        <h1>${tr("Gestionale Aziendale","Gestion d'entreprise")}</h1>
+        <p class="sub">${isSignup? tr("Crea il tuo account","Créez votre compte") : tr("Accedi al tuo account","Connectez-vous à votre compte")}</p>
         <div id="login-msg"></div>
         <form id="login-form">
-          ${isSignup? `<label>Nome completo</label><input type="text" id="f-name" required>` : ""}
+          ${isSignup? `<label>${tr("Nome completo","Nom complet")}</label><input type="text" id="f-name" required>` : ""}
           <label>Email</label>
           <input type="email" id="f-email" required>
           <label>Password</label>
           <input type="password" id="f-password" required minlength="6">
-          <button type="submit">${isSignup? "Registrati" : "Accedi"}</button>
+          <button type="submit">${isSignup? tr("Registrati","S'inscrire") : tr("Accedi","Se connecter")}</button>
         </form>
         <div class="switch-link">
           ${isSignup
-            ? `Hai già un account? <a id="switch-mode">Accedi</a>`
-            : `Non hai un account? <a id="switch-mode">Registrati</a>`}
+            ? `${tr("Hai già un account?","Vous avez déjà un compte ?")} <a id="switch-mode">${tr("Accedi","Se connecter")}</a>`
+            : `${tr("Non hai un account?","Vous n'avez pas de compte ?")} <a id="switch-mode">${tr("Registrati","S'inscrire")}</a>`}
         </div>
       </div>
     </div>
   `;
+  document.querySelectorAll("#lang-switch-login button").forEach(b=>{ b.onclick = ()=>cambiaLingua(b.dataset.lang); });
   document.getElementById("switch-mode").onclick = ()=>{
     state.authMode = isSignup? "login" : "signup";
     renderLogin();
@@ -614,7 +669,7 @@ function renderLogin(){
       const fullName = document.getElementById("f-name").value.trim();
       error = await handleSignup(email, password, fullName);
       if(!error){
-        msgBox.innerHTML = `<div class="msg ok">Registrazione avvenuta. Controlla la tua email se richiesta conferma, poi accedi.</div>`;
+        msgBox.innerHTML = `<div class="msg ok">${tr("Registrazione avvenuta. Controlla la tua email se richiesta conferma, poi accedi.","Inscription réussie. Vérifiez votre email si une confirmation est demandée, puis connectez-vous.")}</div>`;
         state.authMode = "login";
         setTimeout(renderLogin, 1800);
         return;
@@ -656,26 +711,26 @@ function viewDashboard(){
   const clientiInattivi = d.clienti.filter(c=>!d.cantieri.some(k=>k.cliente_id===c.id && k.stato==="attivo")).length;
   return `
     <div class="kpi-grid">
-      <div class="kpi"><div class="num">${d.clienti.length}</div><div class="lbl">Clienti</div></div>
-      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">Cantieri attivi</div></div>
-      <div class="kpi"><div class="num">${clientiInattivi}</div><div class="lbl">Clienti senza cantieri attivi</div></div>
-      <div class="kpi"><div class="num">${d.articoli.length}</div><div class="lbl">Articoli a catalogo</div></div>
-      <div class="kpi"><div class="num">${d.pezzi.length}</div><div class="lbl">Pezzi totali (DTR)</div></div>
-      <div class="kpi"><div class="num">${fuoriMagazzino}</div><div class="lbl">Pezzi fuori magazzino</div></div>
-      <div class="kpi"><div class="num">${daRevisionare}</div><div class="lbl">Da revisionare/riparare</div></div>
-      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">Service Order attivi</div></div>
-      <div class="kpi"><div class="num">${soScaduti}</div><div class="lbl">Service Order scaduti</div></div>
-      <div class="kpi"><div class="num">${ddtDaChiudere}</div><div class="lbl">DDT da chiudere</div></div>
-      ${vedePrezzi? `<div class="kpi"><div class="num">${preventiviAperti}</div><div class="lbl">Preventivi aperti</div></div>
-      <div class="kpi"><div class="num">${fmtMoney(valoreMagazzino())}</div><div class="lbl">Valore magazzino (a listino)</div></div>` : ""}
+      <div class="kpi"><div class="num">${d.clienti.length}</div><div class="lbl">${tr("Clienti","Clients")}</div></div>
+      <div class="kpi"><div class="num">${cantieriAttivi}</div><div class="lbl">${tr("Cantieri attivi","Chantiers actifs")}</div></div>
+      <div class="kpi"><div class="num">${clientiInattivi}</div><div class="lbl">${tr("Clienti senza cantieri attivi","Clients sans chantier actif")}</div></div>
+      <div class="kpi"><div class="num">${d.articoli.length}</div><div class="lbl">${tr("Articoli a catalogo","Articles au catalogue")}</div></div>
+      <div class="kpi"><div class="num">${d.pezzi.length}</div><div class="lbl">${tr("Pezzi totali (DTR)","Pièces totales (DTR)")}</div></div>
+      <div class="kpi"><div class="num">${fuoriMagazzino}</div><div class="lbl">${tr("Pezzi fuori magazzino","Pièces hors entrepôt")}</div></div>
+      <div class="kpi"><div class="num">${daRevisionare}</div><div class="lbl">${tr("Da revisionare/riparare","À réviser/réparer")}</div></div>
+      <div class="kpi"><div class="num">${soAperti}</div><div class="lbl">${tr("Service Order attivi","Ordres de service actifs")}</div></div>
+      <div class="kpi"><div class="num">${soScaduti}</div><div class="lbl">${tr("Service Order scaduti","Ordres de service en retard")}</div></div>
+      <div class="kpi"><div class="num">${ddtDaChiudere}</div><div class="lbl">${tr("DDT da chiudere","BL à clôturer")}</div></div>
+      ${vedePrezzi? `<div class="kpi"><div class="num">${preventiviAperti}</div><div class="lbl">${tr("Preventivi aperti","Devis ouverts")}</div></div>
+      <div class="kpi"><div class="num">${fmtMoney(valoreMagazzino())}</div><div class="lbl">${tr("Valore magazzino (a listino)","Valeur de l'entrepôt (au tarif)")}</div></div>` : ""}
       ${vedeContabilita? `
-      <div class="kpi"><div class="num">${fmtMoney(daIncassare)}</div><div class="lbl">Da incassare</div></div>
-      <div class="kpi"><div class="num">${scadute}</div><div class="lbl">Fatture scadute</div></div>` : ""}
+      <div class="kpi"><div class="num">${fmtMoney(daIncassare)}</div><div class="lbl">${tr("Da incassare","À encaisser")}</div></div>
+      <div class="kpi"><div class="num">${scadute}</div><div class="lbl">${tr("Fatture scadute","Factures échues")}</div></div>` : ""}
     </div>
     <div class="card" style="margin-top:18px;">
-      <h2>Ultimi Service Order</h2>
-      ${d.serviceOrders.length===0? `<div class="empty">Nessun Service Order creato.</div>` : `
-      <table><thead><tr><th>Numero</th><th>Cliente</th><th>Cantiere</th><th>Stato</th><th>Apertura</th></tr></thead>
+      <h2>${tr("Ultimi Service Order","Derniers ordres de service")}</h2>
+      ${d.serviceOrders.length===0? `<div class="empty">${tr("Nessun Service Order creato.","Aucun ordre de service créé.")}</div>` : `
+      <table><thead><tr><th>${tr("Numero","Numéro")}</th><th>${tr("Cliente","Client")}</th><th>${tr("Cantiere","Chantier")}</th><th>${tr("Stato","État")}</th><th>${tr("Apertura","Ouverture")}</th></tr></thead>
       <tbody>
         ${d.serviceOrders.slice(0,8).map(s=>`
           <tr><td>#${soNumero(s.numero)}</td><td>${escapeHtml(clienteNome(s.cliente_id))}</td><td>${escapeHtml(cantiereNome(s.cantiere_id))}</td><td>${badge(s.stato)}</td><td>${fmtDate(s.data_apertura)}</td></tr>
@@ -845,7 +900,7 @@ function wireAndamento(){
   } else {
     disegnaGrafico("chart-fattcostiutile", {
       type: "bar",
-      data: { labels: ["Fatturato","Costi","Utile"], datasets: [{ label:"Importo (€)", data: [c.fin.fatturato,c.fin.costi,c.fin.utile], backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
+      data: { labels: ["Fatturato","Costi","Utile"], datasets: [{ label:"Importo (FCFA)", data: [c.fin.fatturato,c.fin.costi,c.fin.utile], backgroundColor:[COLORE_BLU,COLORE_ARANCIO,COLORE_AQUA], borderRadius:4 }] },
       options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
     });
     disegnaGrafico("chart-incassato", {
@@ -897,10 +952,10 @@ function calcolaFatturatoPerCliente(){
   return Object.values(map).sort((a,b)=>b.fatturato-a.fatturato);
 }
 function fasciaRitardo(giorni){
-  if(giorni<=30) return "0-30 giorni";
-  if(giorni<=60) return "31-60 giorni";
-  if(giorni<=90) return "61-90 giorni";
-  return "Oltre 90 giorni";
+  if(giorni<=30) return tr("0-30 giorni","0-30 jours");
+  if(giorni<=60) return tr("31-60 giorni","31-60 jours");
+  if(giorni<=90) return tr("61-90 giorni","61-90 jours");
+  return tr("Oltre 90 giorni","Plus de 90 jours");
 }
 function calcolaFattureScadute(){
   const oggi = new Date(new Date().toDateString());
@@ -1024,7 +1079,7 @@ function wireReportFatturatoCliente(){
   const top = righe.slice(0,15);
   disegnaGrafico("chart-report-fatturato", {
     type: "bar",
-    data: { labels: top.map(r=>clienteNome(r.clienteId)), datasets: [{ label:"Fatturato (€)", data: top.map(r=>r.fatturato), backgroundColor: COLORE_BLU, borderRadius:4 }] },
+    data: { labels: top.map(r=>clienteNome(r.clienteId)), datasets: [{ label:"Fatturato (FCFA)", data: top.map(r=>r.fatturato), backgroundColor: COLORE_BLU, borderRadius:4 }] },
     options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
   wireExportButtons("exp-report-fatturato", "fatturato_per_cliente", "Fatturato per cliente",
@@ -1033,7 +1088,7 @@ function wireReportFatturatoCliente(){
 }
 function renderReportFattureScadute(){
   const righe = calcolaFattureScadute();
-  const fasce = ["0-30 giorni","31-60 giorni","61-90 giorni","Oltre 90 giorni"];
+  const fasce = [fasciaRitardo(0), fasciaRitardo(31), fasciaRitardo(61), fasciaRitardo(91)];
   const totali = fasce.map(fa=>righe.filter(r=>r.fascia===fa).reduce((s,r)=>s+Number(r.fattura.importo_totale),0));
   const totaleScaduto = righe.reduce((s,r)=>s+Number(r.fattura.importo_totale),0);
   return `
@@ -1057,11 +1112,11 @@ function renderReportFattureScadute(){
 }
 function wireReportFattureScadute(){
   const righe = calcolaFattureScadute();
-  const fasce = ["0-30 giorni","31-60 giorni","61-90 giorni","Oltre 90 giorni"];
+  const fasce = [fasciaRitardo(0), fasciaRitardo(31), fasciaRitardo(61), fasciaRitardo(91)];
   const totali = fasce.map(fa=>righe.filter(r=>r.fascia===fa).reduce((s,r)=>s+Number(r.fattura.importo_totale),0));
   disegnaGrafico("chart-report-scadute", {
     type: "bar",
-    data: { labels: fasce, datasets: [{ label:"Importo scaduto (€)", data: totali, backgroundColor:[COLORE_AQUA,COLORE_ARANCIO,COLORE_ARANCIO,"#c0392b"], borderRadius:4 }] },
+    data: { labels: fasce, datasets: [{ label:"Importo scaduto (FCFA)", data: totali, backgroundColor:[COLORE_AQUA,COLORE_ARANCIO,COLORE_ARANCIO,"#c0392b"], borderRadius:4 }] },
     options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
   wireExportButtons("exp-report-scadute", "fatture_scadute", "Fatture scadute",
@@ -1097,7 +1152,7 @@ function wireReportArticoliVenduti(){
   const top = righe.slice(0,15);
   disegnaGrafico("chart-report-venduti", {
     type: "bar",
-    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore venduto (€)", data: top.map(r=>r.valore), backgroundColor: COLORE_BLU, borderRadius:4 }] },
+    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore venduto (FCFA)", data: top.map(r=>r.valore), backgroundColor: COLORE_BLU, borderRadius:4 }] },
     options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
   wireExportButtons("exp-report-venduti", "articoli_venduti", "Articoli venduti",
@@ -1133,7 +1188,7 @@ function wireReportArticoliNoleggiati(){
   const top = righe.slice(0,15);
   disegnaGrafico("chart-report-noleggiati", {
     type: "bar",
-    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore noleggiato (€)", data: top.map(r=>r.valore), backgroundColor: COLORE_ARANCIO, borderRadius:4 }] },
+    data: { labels: top.map(r=>articoloLabel(r.articoloId)), datasets: [{ label:"Valore noleggiato (FCFA)", data: top.map(r=>r.valore), backgroundColor: COLORE_ARANCIO, borderRadius:4 }] },
     options: { indexAxis:"y", plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ callback:v=>fmtMoney(v) } } } }
   });
   wireExportButtons("exp-report-noleggiati", "articoli_noleggiati", "Articoli noleggiati",
@@ -1170,9 +1225,9 @@ function wireReportClientiDaRicontattare(){
 // ============================================================
 // CLIENTI
 // ============================================================
-function statoCrmLabel(s){ const map={prospect:"Prospect",contattato:"Contattato",preventivo_inviato:"Preventivo inviato",cliente:"Cliente",cliente_inattivo:"Cliente inattivo"}; return map[s]||"Prospect"; }
+function statoCrmLabel(s){ const map=tr({prospect:"Prospect",contattato:"Contattato",preventivo_inviato:"Preventivo inviato",cliente:"Cliente",cliente_inattivo:"Cliente inattivo"},{prospect:"Prospect",contattato:"Contacté",preventivo_inviato:"Devis envoyé",cliente:"Client",cliente_inattivo:"Client inactif"}); return map[s]||tr("Prospect","Prospect"); }
 function statoCrmClass(s){ const map={prospect:"in_revisione",contattato:"in_uso",preventivo_inviato:"in_corso",cliente:"chiuso",cliente_inattivo:"danneggiato"}; return map[s]||"in_revisione"; }
-function potenzialeLabel(s){ const map={basso:"Basso",medio:"Medio",alto:"Alto"}; return map[s]||"-"; }
+function potenzialeLabel(s){ const map=tr({basso:"Basso",medio:"Medio",alto:"Alto"},{basso:"Faible",medio:"Moyen",alto:"Élevé"}); return map[s]||"-"; }
 function nomeUtente(id){ const p = state.data.profiles.find(x=>x.id===id); return p? (p.full_name||"-") : "-"; }
 function viewClienti(){
   const puoModificare = ["commerciale","contabile","admin"].includes(myRole());
@@ -2637,7 +2692,7 @@ function viewFatture(){
           <div><label>Service Order collegato</label><select id="ft-so"><option value="">-- nessuno --</option>${soOpts}</select></div>
           <div><label>Data emissione</label><input type="date" id="ft-emissione" value="${new Date().toISOString().slice(0,10)}"></div>
           <div><label>Data scadenza</label><input type="date" id="ft-scadenza"></div>
-          <div><label>Imponibile (€) *</label><input type="number" step="0.01" required id="ft-imponibile"></div>
+          <div><label>Imponibile (FCFA) *</label><input type="number" step="0.01" required id="ft-imponibile"></div>
           <div><label>IVA %</label><input type="number" step="0.01" id="ft-iva" value="22"></div>
         </div>
         <label>Note</label><textarea id="ft-note"></textarea>
@@ -2684,7 +2739,7 @@ function editFattura(id){
         </div>
         <div><label>Data emissione</label><input type="date" id="ef-emissione" value="${f.data_emissione||""}"></div>
         <div><label>Data scadenza</label><input type="date" id="ef-scadenza" value="${f.data_scadenza||""}"></div>
-        <div><label>Imponibile (€) *</label><input type="number" step="0.01" required id="ef-imponibile" value="${f.importo_imponibile}"></div>
+        <div><label>Imponibile (FCFA) *</label><input type="number" step="0.01" required id="ef-imponibile" value="${f.importo_imponibile}"></div>
         <div><label>IVA %</label><input type="number" step="0.01" id="ef-iva" value="${f.iva_percentuale}"></div>
       </div>
       <label>Note</label><textarea id="ef-note">${escapeHtml(f.note||"")}</textarea>
@@ -2789,7 +2844,7 @@ function viewCassa(){
         <div class="form-grid">
           <div><label>Tipo *</label><select required id="mv-tipo"><option value="entrata">Entrata</option><option value="uscita">Uscita</option></select></div>
           <div><label>Metodo</label><select id="mv-metodo"><option value="banca">Banca</option><option value="cassa">Cassa</option></select></div>
-          <div><label>Importo (€) *</label><input type="number" step="0.01" required id="mv-importo"></div>
+          <div><label>Importo (FCFA) *</label><input type="number" step="0.01" required id="mv-importo"></div>
           <div><label>Data</label><input type="date" id="mv-data" value="${new Date().toISOString().slice(0,10)}"></div>
         </div>
         <label>Descrizione</label><textarea id="mv-descrizione"></textarea>
@@ -2846,7 +2901,7 @@ function editMovimento(id){
       <div class="form-grid">
         <div><label>Tipo *</label><select required id="em-tipo"><option value="entrata" ${m.tipo==="entrata"?"selected":""}>Entrata</option><option value="uscita" ${m.tipo==="uscita"?"selected":""}>Uscita</option></select></div>
         <div><label>Metodo</label><select id="em-metodo"><option value="banca" ${m.metodo==="banca"?"selected":""}>Banca</option><option value="cassa" ${m.metodo==="cassa"?"selected":""}>Cassa</option></select></div>
-        <div><label>Importo (€) *</label><input type="number" step="0.01" required id="em-importo" value="${m.importo}"></div>
+        <div><label>Importo (FCFA) *</label><input type="number" step="0.01" required id="em-importo" value="${m.importo}"></div>
         <div><label>Data</label><input type="date" id="em-data" value="${m.data||""}"></div>
       </div>
       <label>Descrizione</label><textarea id="em-descrizione">${escapeHtml(m.descrizione||"")}</textarea>
@@ -3228,9 +3283,12 @@ function stampaDDT(id){
 // ============================================================
 // REGISTRO MODIFICHE (solo admin)
 // ============================================================
-function nomeTabella(t){
-  const map = { clienti:"Cliente", cantieri:"Cantiere", pezzi:"Pezzo (DTR)", articoli:"Articolo", service_orders:"Service Order", preventivi:"Preventivo", fatture:"Fattura", ddt:"DDT" };
-  return map[t] || t;
+function nomeTabella(tb){
+  const map = tr(
+    { clienti:"Cliente", cantieri:"Cantiere", pezzi:"Pezzo (DTR)", articoli:"Articolo", service_orders:"Service Order", preventivi:"Preventivo", fatture:"Fattura", ddt:"DDT" },
+    { clienti:"Client", cantieri:"Chantier", pezzi:"Pièce (DTR)", articoli:"Article", service_orders:"Ordre de service", preventivi:"Devis", fatture:"Facture", ddt:"BL" }
+  );
+  return map[tb] || tb;
 }
 function viewRegistroModifiche(){
   const filtro = state.filtroLogModifiche || "tutte";
