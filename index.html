@@ -1,15 +1,36 @@
-{
-  "name": "Gestionale Aziendale",
-  "short_name": "Gestionale",
-  "description": "Gestionale aziendale: magazzino, clienti, service order, DDT, fatturazione e CRM.",
-  "start_url": "./index.html",
-  "scope": "./",
-  "display": "standalone",
-  "background_color": "#f4f6f9",
-  "theme_color": "#1e5cb3",
-  "orientation": "portrait-primary",
-  "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ]
-}
+// Service worker minimo: rende il gestionale installabile come app sul telefono
+// e mantiene visibile una pagina base anche con connessione instabile.
+// IMPORTANTE: non tocca mai le chiamate verso Supabase (altro dominio): quelle
+// passano sempre e solo dalla rete, così i dati restano sempre aggiornati.
+const CACHE_NAME = "gestionale-v1";
+const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png"];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return;
+  let url;
+  try { url = new URL(req.url); } catch (e) { return; }
+  if (url.origin !== self.location.origin) return; // mai Supabase o altri domini
+
+  if (req.mode === "navigate") {
+    event.respondWith(fetch(req).catch(() => caches.match("./index.html")));
+    return;
+  }
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
+});
