@@ -2,7 +2,7 @@
 // e mantiene visibile una pagina base anche con connessione instabile.
 // IMPORTANTE: non tocca mai le chiamate verso Supabase (altro dominio): quelle
 // passano sempre e solo dalla rete, così i dati restano sempre aggiornati.
-const CACHE_NAME = "gestionale-v4";
+const CACHE_NAME = "gestionale-v5";
 const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./favicon-32.png"];
 
 self.addEventListener("install", (event) => {
