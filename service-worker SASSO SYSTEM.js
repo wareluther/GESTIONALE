@@ -1,0 +1,36 @@
+// Service worker minimo: rende il gestionale installabile come app sul telefono
+// e mantiene visibile una pagina base anche con connessione instabile.
+// IMPORTANTE: non tocca mai le chiamate verso Supabase (altro dominio): quelle
+// passano sempre e solo dalla rete, così i dati restano sempre aggiornati.
+const CACHE_NAME = "gestionale-v4";
+const APP_SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./favicon-32.png"];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return;
+  let url;
+  try { url = new URL(req.url); } catch (e) { return; }
+  if (url.origin !== self.location.origin) return; // mai Supabase o altri domini
+
+  if (req.mode === "navigate") {
+    event.respondWith(fetch(req).catch(() => caches.match("./index.html")));
+    return;
+  }
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
+});
