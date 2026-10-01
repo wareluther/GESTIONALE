@@ -31,44 +31,91 @@
     --danger:#d9483d; --danger-bg:#fdeceb;
     --ok:#1f9d5e; --ok-bg:#e5f8ee;
     --warn:#c9860f; --warn-bg:#fdf2dc;
+    --chip-bg:#eef1f7; --chip-bg-hover:#e2e7f0;
+    --row-hover:#f8fafc; --th-bg:#fafbfd;
+    --login-grad-start:#eef2fb;
     --radius-sm:8px; --radius:12px; --radius-lg:16px;
     --shadow-sm:0 1px 2px rgba(23,32,58,.06);
     --shadow-md:0 8px 24px -8px rgba(23,32,58,.2);
     --shadow-header:0 2px 10px rgba(20,40,90,.15);
+    --sidebar-bg:#141b2d;
+  }
+  :root[data-theme="dark"]{
+    --primary:#5b93ff; --primary-dark:#3d72e0; --primary-light:#1c2740;
+    --accent:#ff8a5c; --aqua:#33d9a0;
+    --bg:#10141d; --card:#1a2130; --border:#2a3245; --border-soft:#232a3a;
+    --text:#e7ebf3; --muted:#94a1b8; --muted-soft:#6d7890;
+    --danger:#ff6b60; --danger-bg:#3a2126;
+    --ok:#3ddc86; --ok-bg:#153524;
+    --warn:#ffbf52; --warn-bg:#3a2e14;
+    --chip-bg:#232b3d; --chip-bg-hover:#2b3549;
+    --row-hover:#1f2636; --th-bg:#171e2c;
+    --login-grad-start:#161c2a;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-md:0 8px 28px -8px rgba(0,0,0,.6);
+    --shadow-header:0 2px 12px rgba(0,0,0,.5);
+    --sidebar-bg:#0b0f18;
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;}
-  #app{min-height:100vh;display:flex;flex-direction:column;}
-  header{background:linear-gradient(135deg,var(--primary) 0%,var(--primary-dark) 100%);color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;box-shadow:var(--shadow-header);position:relative;z-index:2;}
-  header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:-.01em;}
-  header .user-box{font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-  header .user-box span{opacity:.95;}
-  .lang-switch{display:flex;background:rgba(255,255,255,.16);border-radius:8px;padding:2px;}
-  .lang-switch button{background:transparent;color:#fff;padding:5px 10px;font-size:11px;font-weight:700;border-radius:6px;opacity:.8;box-shadow:none;}
+  body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;transition:background-color .25s ease,color .25s ease;}
+  #app{min-height:100vh;}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes modalPop{from{opacity:0;transform:scale(.95) translateY(6px);}to{opacity:1;transform:scale(1) translateY(0);}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  /* ---- struttura: menu laterale scuro + colonna di contenuto ---- */
+  .shell{display:flex;min-height:100vh;}
+  .sidebar{width:232px;flex-shrink:0;background:var(--sidebar-bg,#141b2d);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;z-index:3;}
+  .sidebar .brand{display:flex;align-items:center;gap:10px;padding:18px 18px 16px;border-bottom:1px solid rgba(255,255,255,.08);}
+  .sidebar .brand .brand-dot{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--primary) 0%,var(--aqua) 100%);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:14px;flex-shrink:0;}
+  .sidebar .brand h1{font-size:15px;margin:0;font-weight:700;color:#fff;letter-spacing:-.01em;line-height:1.25;}
+  .sidebar nav{flex:1;display:flex;flex-direction:column;gap:2px;padding:14px 10px;overflow-y:auto;background:transparent;border:none;}
+  .sidebar nav button{display:flex;align-items:center;gap:11px;justify-content:flex-start;padding:10px 12px;border-radius:9px;color:rgba(255,255,255,.62);font-size:13.5px;font-weight:600;background:transparent;border:none;text-align:left;width:100%;white-space:normal;box-shadow:none;border-bottom:none;transform:none !important;transition:background-color .15s ease,color .15s ease;}
+  .sidebar nav button .ic{font-size:15px;width:18px;text-align:center;flex-shrink:0;}
+  .sidebar nav button:hover{background:rgba(255,255,255,.08);color:#fff;}
+  .sidebar nav button.active{background:linear-gradient(135deg,var(--primary) 0%,var(--primary-dark) 100%);color:#fff;box-shadow:0 2px 10px -2px rgba(0,0,0,.4);}
+  .sidebar .bottom{padding:14px 14px 18px;border-top:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;gap:10px;}
+  .sidebar .bottom .user-line{font-size:12px;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:8px;}
+  .sidebar .bottom .user-line .avatar{width:26px;height:26px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+  .sidebar .bottom .switches-row{display:flex;gap:6px;}
+  .content-col{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .topbar{background:var(--card);border-bottom:1px solid var(--border);padding:13px 24px;display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:2;transition:background-color .25s ease,border-color .25s ease;}
+  .lang-switch,.theme-switch{display:flex;background:rgba(255,255,255,.16);border-radius:8px;padding:2px;}
+  .topbar .lang-switch,.topbar .theme-switch{background:var(--chip-bg);}
+  .lang-switch button,.theme-switch button{background:transparent;color:#fff;padding:5px 10px;font-size:11px;font-weight:700;border-radius:6px;opacity:.8;box-shadow:none;transform:none !important;}
+  .topbar .lang-switch button,.topbar .theme-switch button{color:var(--muted);}
   .lang-switch button.active{background:#fff;color:var(--primary-dark);opacity:1;}
+  .topbar .lang-switch button.active{background:var(--primary);color:#fff;}
   .lang-switch button:hover{background:rgba(255,255,255,.3);}
+  .topbar .lang-switch button:hover,.topbar .theme-switch button:hover{background:var(--chip-bg-hover);}
   .lang-switch button.active:hover{background:#fff;}
-  button{cursor:pointer;border:none;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600;background:var(--primary);color:#fff;transition:background .15s ease,transform .05s ease;box-shadow:var(--shadow-sm);}
-  button:hover{background:var(--primary-dark);}
+  .topbar .lang-switch button.active:hover{background:var(--primary);}
+  .theme-switch button{padding:6px 9px;font-size:14px;opacity:.85;}
+  .theme-switch button:hover{background:rgba(255,255,255,.3);opacity:1;}
+  button{cursor:pointer;border:none;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600;background:var(--primary);color:#fff;transition:background .15s ease,transform .12s ease,box-shadow .15s ease;box-shadow:var(--shadow-sm);}
+  button:hover{background:var(--primary-dark);transform:translateY(-1px);}
   button:active{transform:translateY(1px);}
-  button.secondary{background:#eef1f7;color:var(--text);box-shadow:none;}
-  button.secondary:hover{background:#e2e7f0;}
+  button.secondary{background:var(--chip-bg);color:var(--text);box-shadow:none;}
+  button.secondary:hover{background:var(--chip-bg-hover);}
   button.danger{background:var(--danger);}
   button.danger:hover{background:#c13a30;}
-  nav{background:#fff;border-bottom:1px solid var(--border);display:flex;gap:2px;padding:0 20px;overflow-x:auto;}
-  nav button{background:transparent;color:var(--muted);border-radius:0;padding:13px 16px;font-weight:600;font-size:13.5px;white-space:nowrap;box-shadow:none;border-bottom:2px solid transparent;}
-  nav button.active{color:var(--primary);border-bottom:2px solid var(--primary);}
-  nav button:hover{background:var(--primary-light);color:var(--primary);}
   main{flex:1;padding:24px;max-width:1240px;width:100%;margin:0 auto;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:18px;box-shadow:var(--shadow-sm);}
+  main#main-content{padding:24px;}
+  #main-content > *{animation:fadeInUp .35s ease both;}
+  #main-content > *:nth-child(2){animation-delay:.04s;}
+  #main-content > *:nth-child(3){animation-delay:.08s;}
+  #main-content > *:nth-child(4){animation-delay:.12s;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:18px;box-shadow:var(--shadow-sm);transition:background-color .25s ease,border-color .25s ease,box-shadow .2s ease,transform .2s ease;}
+  .card:hover{box-shadow:var(--shadow-md);}
   .card h2{margin-top:0;font-size:16px;font-weight:700;letter-spacing:-.01em;}
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
-  th{color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;background:#fafbfd;}
-  tr:hover td{background:#f8fafc;}
+  th{color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;background:var(--th-bg);}
+  tr{transition:background-color .12s ease;}
+  tr:hover td{background:var(--row-hover);}
   .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:14px;}
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600;}
-  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff;color:var(--text);transition:border-color .15s ease,box-shadow .15s ease;font-family:inherit;}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--card);color:var(--text);transition:border-color .15s ease,box-shadow .15s ease,background-color .25s ease;font-family:inherit;}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light);}
   textarea{min-height:64px;font-family:inherit;}
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.01em;}
@@ -80,15 +127,16 @@
   .badge.in_corso{background:var(--warn-bg);color:var(--warn);}
   .badge.chiuso{background:var(--ok-bg);color:var(--ok);}
   .badge.annullato{background:var(--danger-bg);color:var(--danger);}
-  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,#eef2fb 0%,var(--bg) 55%);}
-  .login-box{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px 32px;width:100%;max-width:380px;box-shadow:var(--shadow-md);}
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,var(--login-grad-start) 0%,var(--bg) 55%);transition:background .25s ease;}
+  .login-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:36px 32px;width:100%;max-width:380px;box-shadow:var(--shadow-md);animation:fadeInUp .4s ease both;}
   .login-box h1{font-size:21px;text-align:center;margin-bottom:4px;font-weight:800;color:var(--primary-dark);}
   .login-box p.sub{text-align:center;color:var(--muted);font-size:13px;margin-top:0;margin-bottom:22px;}
   .login-box label{margin-top:12px;}
   .login-box button{width:100%;margin-top:20px;padding:11px;}
-  .login-box .lang-switch{justify-content:center;background:#eef1f7;}
-  .login-box .lang-switch button{color:var(--muted);}
+  .login-box .lang-switch,.login-box .theme-switch{justify-content:center;background:var(--chip-bg);}
+  .login-box .lang-switch button,.login-box .theme-switch button{color:var(--muted);}
   .login-box .lang-switch button.active{background:var(--primary);color:#fff;}
+  .login-box .top-switches{display:flex;gap:8px;justify-content:center;margin-bottom:14px;}
   .switch-link{text-align:center;margin-top:16px;font-size:13px;color:var(--muted);}
   .switch-link a{color:var(--primary);cursor:pointer;text-decoration:none;font-weight:600;}
   .msg{padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;}
@@ -97,24 +145,38 @@
   .actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
   .empty{color:var(--muted-soft);font-size:13px;padding:24px;text-align:center;}
   .pill-select{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
-  .pill-select button{background:#eef1f7;color:var(--text);padding:7px 14px;font-size:12.5px;box-shadow:none;font-weight:600;}
+  .pill-select button{background:var(--chip-bg);color:var(--text);padding:7px 14px;font-size:12.5px;box-shadow:none;font-weight:600;}
   .pill-select button.active{background:var(--primary);color:#fff;}
   .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;}
-  .kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-sm);border-top:3px solid var(--primary);}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-sm);border-top:3px solid var(--primary);transition:background-color .25s ease,border-color .25s ease,box-shadow .2s ease,transform .2s ease;}
+  .kpi:hover{box-shadow:var(--shadow-md);transform:translateY(-3px);}
   .kpi .num{font-size:27px;font-weight:800;color:var(--text);letter-spacing:-.02em;}
   .kpi .lbl{font-size:12px;color:var(--muted);margin-top:4px;font-weight:500;}
   select[multiple]{height:auto;}
   .close-x{background:transparent;color:var(--muted);padding:4px 8px;box-shadow:none;}
-  .close-x:hover{background:#eef1f7;}
-  .modal-bg{position:fixed;inset:0;background:rgba(20,26,45,.55);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;}
-  .modal{background:#fff;border-radius:var(--radius-lg);padding:22px;max-width:520px;width:100%;max-height:85vh;overflow:auto;box-shadow:var(--shadow-md);}
+  .close-x:hover{background:var(--chip-bg);}
+  .modal-bg{position:fixed;inset:0;background:rgba(10,14,22,.6);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;animation:fadeIn .15s ease;}
+  .modal{background:var(--card);border-radius:var(--radius-lg);padding:22px;max-width:520px;width:100%;max-height:85vh;overflow:auto;box-shadow:var(--shadow-md);animation:modalPop .18s ease;}
   .modal h3{margin-top:0;font-weight:700;}
   small.hint{color:var(--muted);}
   .charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:18px;}
   .chart-wrap{position:relative;height:260px;}
   .chart-wrap canvas{max-width:100%;}
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important;animation-delay:0s !important;transition-duration:.001ms !important;}
+  }
+  @media (max-width:900px){
+    .shell{flex-direction:column;}
+    .sidebar{width:100%;height:auto;position:relative;flex-direction:row;align-items:center;overflow-x:auto;overflow-y:visible;}
+    .sidebar .brand{border-bottom:none;border-right:1px solid rgba(255,255,255,.08);padding:12px 14px;}
+    .sidebar .brand h1{display:none;}
+    .sidebar nav{flex-direction:row;padding:8px;overflow-x:auto;}
+    .sidebar nav button{flex-direction:column;gap:3px;padding:8px 10px;font-size:10.5px;white-space:nowrap;}
+    .sidebar .bottom{flex-direction:row;align-items:center;border-top:none;border-left:1px solid rgba(255,255,255,.08);padding:8px 14px;}
+    .sidebar .bottom .user-line span:not(.avatar){display:none;}
+  }
   @media (max-width:640px){
-    header{padding:12px 16px;} main{padding:16px;} .card{padding:16px;}
+    .topbar{padding:10px 16px;} main#main-content{padding:16px;} .card{padding:16px;}
   }
 </style>
 </head>
@@ -143,6 +205,7 @@ let state = {
   andamentoPeriodo: "rolling12", // rolling12 | annocorrente | annoscorso | confronto
   filtroLogModifiche: "tutte",
   lang: (function(){ try{ return localStorage.getItem("gestionale_lang") || "it"; }catch(e){ return "it"; } })(),
+  theme: (function(){ try{ return localStorage.getItem("gestionale_theme") || "light"; }catch(e){ return "light"; } })(),
 };
 
 const app = document.getElementById("app");
@@ -158,6 +221,22 @@ function cambiaLingua(nuovaLingua){
   try{ localStorage.setItem("gestionale_lang", nuovaLingua); }catch(e){}
   render();
 }
+
+// ============================================================
+// TEMA CHIARO/SCURO — si sceglie con il pulsante ☀️/🌙 in alto e resta
+// salvato sul dispositivo. applyTema() va richiamata subito, anche prima
+// del login, cosi la pagina parte gia' con il tema giusto.
+// ============================================================
+function applyTema(){
+  document.documentElement.setAttribute("data-theme", state.theme === "dark" ? "dark" : "light");
+}
+function cambiaTema(){
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  try{ localStorage.setItem("gestionale_theme", state.theme); }catch(e){}
+  applyTema();
+  render();
+}
+applyTema();
 
 function statoLabel(s){
   const map = tr({
@@ -549,47 +628,65 @@ async function render(){
     if(!erroreAuto) await loadAll();
   }
 
-  const navItems = [["dashboard",tr("Dashboard","Tableau de bord"),isOperativo],
-    ["clienti",tr("Clienti","Clients"),isOperativo],
-    ["cantieri",tr("Cantieri","Chantiers"),isOperativo],
-    ["magazzino",tr("Magazzino","Entrepôt"),vedeMagazzino],
-    ["pezzi",tr("Pezzi (DTR)","Pièces (DTR)"),vedeMagazzino],
-    ["inventariorapido",tr("📱 Inventario rapido","📱 Inventaire rapide"),vedeInventarioRapido],
-    ["ddt","DDT/BL",vedeMagazzino],
-    ["listino",tr("Listino prezzi","Liste des prix"),vedePrezzi],
-    ["preventivi",tr("Preventivi","Devis"),vedePrezzi],
-    ["serviceorder","Service Order",vedeMagazzino],
-    ["fornitori",tr("Fornitori","Fournisseurs"),vedeContabilita],
-    ["fatture",tr("Fatture","Factures"),vedeContabilita],
-    ["cassa",tr("Cassa","Caisse"),vedeContabilita],
-    ["messaggi",tr("Messaggi","Messages"),isOperativo],
-    ["andamento",tr("Andamento azienda","Performance de l'entreprise"),vedeAndamento],
-    ["report",tr("Report avanzati","Rapports avancés"),vedeReport],
-    ["registromodifiche",tr("Registro modifiche","Historique des modifications"),ruolo==="admin"],
-    ["utenti",tr("Utenti","Utilisateurs"),ruolo==="admin"]];
-  if(!navItems.find(n=>n[0]===state.view && n[2])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
+  const navItems = [["dashboard","🏠",tr("Dashboard","Tableau de bord"),isOperativo],
+    ["clienti","👥",tr("Clienti","Clients"),isOperativo],
+    ["cantieri","🏗️",tr("Cantieri","Chantiers"),isOperativo],
+    ["magazzino","📦",tr("Magazzino","Entrepôt"),vedeMagazzino],
+    ["pezzi","🔧",tr("Pezzi (DTR)","Pièces (DTR)"),vedeMagazzino],
+    ["inventariorapido","📱",tr("Inventario rapido","Inventaire rapide"),vedeInventarioRapido],
+    ["ddt","🚚","DDT/BL",vedeMagazzino],
+    ["listino","💲",tr("Listino prezzi","Liste des prix"),vedePrezzi],
+    ["preventivi","📝",tr("Preventivi","Devis"),vedePrezzi],
+    ["serviceorder","🛠️","Service Order",vedeMagazzino],
+    ["fornitori","🏭",tr("Fornitori","Fournisseurs"),vedeContabilita],
+    ["fatture","🧾",tr("Fatture","Factures"),vedeContabilita],
+    ["cassa","💰",tr("Cassa","Caisse"),vedeContabilita],
+    ["messaggi","💬",tr("Messaggi","Messages"),isOperativo],
+    ["andamento","📈",tr("Andamento azienda","Performance de l'entreprise"),vedeAndamento],
+    ["report","📊",tr("Report avanzati","Rapports avancés"),vedeReport],
+    ["registromodifiche","🕒",tr("Registro modifiche","Historique des modifications"),ruolo==="admin"],
+    ["utenti","👤",tr("Utenti","Utilisateurs"),ruolo==="admin"]];
+  if(!navItems.find(n=>n[0]===state.view && n[3])) state.view = (vedeAndamento && !isOperativo) ? "andamento" : "dashboard";
 
   const nonLette = isOperativo? state.data.notificheEventi.filter(ev=>!state.data.notificheLette.some(l=>l.evento_id===ev.id)).length : 0;
+  const iniziali = (state.session.user.email||"?").slice(0,2).toUpperCase();
 
   app.innerHTML = `
-    <header>
-      <h1>${tr("Gestionale Aziendale","Gestion d'entreprise")}</h1>
-      <div class="user-box">
-        <div class="lang-switch" id="lang-switch">
-          <button data-lang="it" class="${state.lang==="it"?"active":""}">IT</button>
-          <button data-lang="fr" class="${state.lang==="fr"?"active":""}">FR</button>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-dot">GA</div>
+          <h1>${tr("Gestionale Aziendale","Gestion d'entreprise")}</h1>
         </div>
-        ${isOperativo? `<button class="secondary" id="btn-ricerca-globale">🔎 ${tr("Cerca","Rechercher")}</button>` : ""}
-        ${isOperativo? `<button class="secondary" id="btn-notifiche">🔔 ${tr("Notifiche","Notifications")}${nonLette>0? ` <span class="badge danneggiato">${nonLette}</span>` : ""}</button>` : ""}
-        <span>${escapeHtml(state.session.user.email)} ${ruolo? `<span class="badge in_uso">${escapeHtml(ruoloLabel(ruolo))}</span>` : ""}</span>
-        <button class="secondary" id="btn-logout">${tr("Esci","Déconnexion")}</button>
+        <nav id="main-nav">${navItems.filter(n=>n[3]).map(n=>navBtn(n[0],n[1],n[2])).join("")}</nav>
+        <div class="bottom">
+          <div class="user-line">
+            <span class="avatar">${iniziali}</span>
+            <span>${escapeHtml(state.session.user.email)}</span>
+            ${ruolo? `<span class="badge in_uso">${escapeHtml(ruoloLabel(ruolo))}</span>` : ""}
+          </div>
+          <button class="secondary" id="btn-logout">${tr("Esci","Déconnexion")}</button>
+        </div>
+      </aside>
+      <div class="content-col">
+        <div class="topbar">
+          <div class="lang-switch" id="lang-switch">
+            <button data-lang="it" class="${state.lang==="it"?"active":""}">IT</button>
+            <button data-lang="fr" class="${state.lang==="fr"?"active":""}">FR</button>
+          </div>
+          <div class="theme-switch" id="theme-switch">
+            <button id="btn-tema" title="${tr('Cambia tema chiaro/scuro','Changer le thème clair/sombre')}">${state.theme==="dark"? "🌙" : "☀️"}</button>
+          </div>
+          ${isOperativo? `<button class="secondary" id="btn-ricerca-globale">🔎 ${tr("Cerca","Rechercher")}</button>` : ""}
+          ${isOperativo? `<button class="secondary" id="btn-notifiche">🔔 ${tr("Notifiche","Notifications")}${nonLette>0? ` <span class="badge danneggiato">${nonLette}</span>` : ""}</button>` : ""}
+        </div>
+        <main id="main-content"><div class="empty">${tr("Caricamento...","Chargement...")}</div></main>
       </div>
-    </header>
-    <nav id="main-nav">${navItems.filter(n=>n[2]).map(n=>navBtn(n[0],n[1])).join("")}</nav>
-    <main id="main-content"><div class="empty">${tr("Caricamento...","Chargement...")}</div></main>
+    </div>
   `;
   document.getElementById("btn-logout").onclick = handleLogout;
   document.querySelectorAll("#lang-switch button").forEach(b=>{ b.onclick = ()=>cambiaLingua(b.dataset.lang); });
+  document.getElementById("btn-tema").onclick = cambiaTema;
   const btnNotifiche = document.getElementById("btn-notifiche");
   if(btnNotifiche) btnNotifiche.onclick = apriNotifiche;
   const btnRicerca = document.getElementById("btn-ricerca-globale");
@@ -619,8 +716,8 @@ async function render(){
   if(state.view==="andamento") { main.innerHTML = await viewAndamento(); wireAndamento(); }
 }
 
-function navBtn(view, label){
-  return `<button data-view="${view}" class="${state.view===view?'active':''}">${label}</button>`;
+function navBtn(view, icon, label){
+  return `<button data-view="${view}" class="${state.view===view?'active':''}"><span class="ic">${icon}</span><span>${label}</span></button>`;
 }
 
 // ============================================================
@@ -631,9 +728,14 @@ function renderLogin(){
   app.innerHTML = `
     <div class="login-wrap">
       <div class="login-box">
-        <div class="lang-switch" id="lang-switch-login" style="margin-bottom:14px;">
-          <button data-lang="it" class="${state.lang==="it"?"active":""}">IT</button>
-          <button data-lang="fr" class="${state.lang==="fr"?"active":""}">FR</button>
+        <div class="top-switches">
+          <div class="lang-switch" id="lang-switch-login">
+            <button data-lang="it" class="${state.lang==="it"?"active":""}">IT</button>
+            <button data-lang="fr" class="${state.lang==="fr"?"active":""}">FR</button>
+          </div>
+          <div class="theme-switch" id="theme-switch-login">
+            <button id="btn-tema-login" title="${tr('Cambia tema chiaro/scuro','Changer le thème clair/sombre')}">${state.theme==="dark"? "🌙" : "☀️"}</button>
+          </div>
         </div>
         <h1>${tr("Gestionale Aziendale","Gestion d'entreprise")}</h1>
         <p class="sub">${isSignup? tr("Crea il tuo account","Créez votre compte") : tr("Accedi al tuo account","Connectez-vous à votre compte")}</p>
@@ -655,6 +757,7 @@ function renderLogin(){
     </div>
   `;
   document.querySelectorAll("#lang-switch-login button").forEach(b=>{ b.onclick = ()=>cambiaLingua(b.dataset.lang); });
+  document.getElementById("btn-tema-login").onclick = cambiaTema;
   document.getElementById("switch-mode").onclick = ()=>{
     state.authMode = isSignup? "login" : "signup";
     renderLogin();
